@@ -1,0 +1,18 @@
+[project]
+name = "raft"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "coloredlogs>=15.0.1",
+    "datasets>=4.4.2",
+    "langchain-experimental>=0.4.1",
+    "langchain-openai>=1.1.6",
+    "mdc>=1.2.1",
+    "openai>=2.14.0",
+    "pypdf2>=3.0.1",
+    "pytest>=9.0.2",
+    "python-dotenv>=1.2.1",
+    "pyyaml>=6.0.3",
+]
