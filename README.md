@@ -4,7 +4,7 @@ RAFT is a recipe to adapting LLMs to domain-specific RAG. You can learn more in 
 
 The input data from the user can be either a general text document (pdf, json, or txt) for general QA or an API documentation in the API Zoo JSONL format for API calling.
 
-This repo modifying from Original repo: https://github.com/sazzad1779-dev/gorilla/tree/main/raft
+This repo modifying from Original repo: https://github.com/ShishirPatil/gorilla
 
 ## Dev environment with Codespaces
 
