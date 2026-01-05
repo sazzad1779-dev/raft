@@ -2,7 +2,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 from mdc import MDC
 from tqdm import tqdm
-from logconf import log_setup
+from src.logconf import log_setup
 import logging
 from typing import Literal, Any, get_args
 import argparse
@@ -15,12 +15,12 @@ import PyPDF2
 import random
 from langchain_experimental.text_splitter import SemanticChunker
 from langchain_openai.embeddings import OpenAIEmbeddings
-from client_utils import build_openai_client, build_langchain_embeddings, UsageStats, ChatCompleter
+from src.client_utils import build_openai_client, build_langchain_embeddings, UsageStats, ChatCompleter
 from math import ceil
-from format import DatasetConverter, datasetFormats, outputDatasetTypes
+from src.format import DatasetConverter, datasetFormats, outputDatasetTypes
 from pathlib import Path
 from dotenv import load_dotenv
-from checkpointing import Checkpointing, checkpointed
+from src.checkpointing import Checkpointing, checkpointed
 import uuid
 import shutil
 from threading import Thread, Event
@@ -45,15 +45,15 @@ def get_args() -> argparse.Namespace:
 
     parser.add_argument("--datapath", type=Path, default="test_data", help="If a file, the path at which the document is located. If a folder, the path at which to load all documents")
     parser.add_argument("--output", type=str, default="./", help="The path at which to save the dataset")
-    parser.add_argument("--output-format", type=str, default="hf", help="The format of the output dataset.", choices=datasetFormats)
+    parser.add_argument("--output-format", type=str, default="chat", help="The format of the output dataset.", choices=datasetFormats)
     parser.add_argument("--output-type", type=str, default="jsonl", help="Type to export the dataset to. Defaults to jsonl.", choices=outputDatasetTypes)
     parser.add_argument("--output-chat-system-prompt", type=str, help="The system prompt to use when the output format is chat")
     parser.add_argument("--output-completion-prompt-column", type=str, default="prompt", help="The prompt column name to use for the completion format")
     parser.add_argument("--output-completion-completion-column", type=str, default="completion", help="The completion column name to use for the completion format")
     parser.add_argument("--distractors", type=int, default=1, help="The number of distractor documents to include per data point / triplet")
     parser.add_argument("--p", type=float, default=1.0, help="The percentage that the oracle document is included in the context")
-    parser.add_argument("--questions", type=int, default=5, help="The number of data points / triplets to generate per chunk")
-    parser.add_argument("--chunk_size", type=int, default=400, help="The size of each chunk in number of tokens")
+    parser.add_argument("--questions", type=int, default=8, help="The number of data points / triplets to generate per chunk")
+    parser.add_argument("--chunk_size", type=int, default=300, help="The size of each chunk in number of tokens")
     parser.add_argument("--doctype", type=str, default="txt", help="The type of the document, must be one of the accepted doctypes", choices=docTypes)
     parser.add_argument("--openai_key", type=str, default=None, help="Your OpenAI key used to make queries to GPT-3.5 or GPT-4")
     parser.add_argument("--embedding_model", type=str, default="text-embedding-ada-002", help="The embedding model to use to encode documents chunks (text-embedding-ada-002, ...)")
@@ -169,11 +169,21 @@ def generate_chunk_instructions(chat_completer: ChatCompleter, chunk: Any, x=5, 
 
 build_qa_messages = {
     "gpt": lambda chunk, x : [
-            {"role": "system", "content": """You are a synthetic question-answer pair generator. Given a chunk of context about 
-             some topic(s), generate %s example questions a user could ask and would be answered using information from the chunk. 
-             For example, if the given context was a Wikipedia paragraph about the United States, an example question could be 
-             'How many states are in the United States?'""" % (x)},
-            {"role": "system", "content": "The questions should be able to be answered in a few words or less. Include only the questions in your response."},
+            {
+        "role": "system",
+        "content": (
+            "You are a synthetic question generator for a product knowledge base focused on "
+            "laser and light source products. Given a chunk of product text (such as descriptions, "
+            "specifications, features, wavelength ranges, applications, and product names), "
+            "generate %s realistic user questions that could be answered directly using the "
+            "information in the chunk. These questions should be similar in style to human ask queries like:\n"
+            "- \"I'm looking for a fiber laser.\"\n"
+            "- \"Tell us about SuperK.\"\n"
+            "- \"Please tell me about laser light sources in the wavelength range of 400 to 2400 nm.\"\n"
+            "Only generate questions that can be answered from the context."
+        ) % (x)
+            },
+            {"role": "system", "content": "The questions must be concise, factual, and focused on products, specifications, or usage. Include only the questions in your response."},
             {"role": "user", "content": str(chunk)}
         ],
     "llama": lambda chunk, x : [
@@ -252,13 +262,40 @@ def encode_question(question: str, api: Any) -> list[str]:
 
 
 prompt_templates = {
+    # "gpt": """
+    #     Question: {question}\nContext: {context}\n
+    #     Answer this question using the information given in the context above. Here is things to pay attention to: 
+    #     - First provide step-by-step reasoning on how to answer the question. 
+    #     - In the reasoning, if you need to copy paste some sentences from the context, include them in ##begin_quote## and ##end_quote##. This would mean that things outside of ##begin_quote## and ##end_quote## are not directly copy paste from the context. 
+    #     - End your response with final answer in the form <ANSWER>: $answer, the answer should be succinct.
+    #     You MUST begin your final answer with the tag "<ANSWER>:".
+    # """,
     "gpt": """
-        Question: {question}\nContext: {context}\n
-        Answer this question using the information given in the context above. Here is things to pay attention to: 
-        - First provide step-by-step reasoning on how to answer the question. 
-        - In the reasoning, if you need to copy paste some sentences from the context, include them in ##begin_quote## and ##end_quote##. This would mean that things outside of ##begin_quote## and ##end_quote## are not directly copy paste from the context. 
-        - End your response with final answer in the form <ANSWER>: $answer, the answer should be succinct.
-        You MUST begin your final answer with the tag "<ANSWER>:".
+        Question: {question}
+        Context: {context}
+
+        Answer this question using the information given in the context above.
+        
+        Instructions:
+        - Provide step-by-step reasoning on how to answer the question.
+        - Explain which parts of the context are meaningful and why.
+        - Copy paste the relevant sentences from the context in ##begin_quote## and ##end_quote##.
+        - Provide a summary of how you reached your answer.
+        - End your response with the final answer in the form <ANSWER>: $answer, the answer should be succinct.
+        - You MUST begin your final answer with the tag "<ANSWER>:".
+
+        Here are some samples:
+
+        Example question: What movement did the arrest of Jack Weinberg in Sproul Plaza give rise to?
+        Example answer: To answer the question, we need to identify the movement that was sparked by the arrest of Jack Weinberg in Sproul Plaza. 
+        The context provided gives us the necessary information to determine this.
+        First, we look for the part of the context that directly mentions Jack Weinberg's arrest. 
+        We find it in the sentence: ##begin_quote##The arrest in Sproul Plaza of Jack Weinberg, a recent Berkeley alumnus and chair of Campus CORE, 
+        prompted a series of student-led acts of formal remonstrance and civil disobedience that ultimately gave rise to the Free Speech Movement##end_quote##.
+        From this sentence, we understand that the arrest of Jack Weinberg led to student-led acts which then gave rise to a specific movement. 
+        The name of the movement is explicitly mentioned in the same sentence as the "Free Speech Movement."
+        Therefore, based on the context provided, we can conclude that the arrest of Jack Weinberg in Sproul Plaza gave rise to the Free Speech Movement.
+        <ANSWER>: Free Speech Movement
     """,
     "llama": """
         Question: {question}
@@ -286,6 +323,8 @@ prompt_templates = {
         The name of the movement is explicitly mentioned in the same sentence as the "Free Speech Movement."
         Therefore, based on the context provided, we can conclude that the arrest of Jack Weinberg in Sproul Plaza gave rise to the Free Speech Movement.
         <ANSWER>: Free Speech Movement
+
+
     """
     }
 

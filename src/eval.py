@@ -6,14 +6,14 @@ import time
 import argparse
 import json
 import os
-from client_utils import StatsCompleter, UsageStats, build_openai_client
+from src.client_utils import StatsCompleter, UsageStats, build_openai_client
 import logging
-from logconf import log_setup
+from src.logconf import log_setup
 from tqdm import tqdm
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
 from tenacity import Retrying, retry, wait_exponential, retry_if_exception_type, before_sleep_log
-from client_utils import CompletionsCompleter
+from src.client_utils import CompletionsCompleter
 
 load_dotenv()  # take environment variables from .env.
 

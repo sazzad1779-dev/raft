@@ -3,7 +3,7 @@ from typing import Any
 from langchain_openai import OpenAIEmbeddings, AzureOpenAIEmbeddings
 from openai import OpenAI
 import logging
-from env_config import read_env_config, set_env
+from src.env_config import read_env_config, set_env
 from os import environ, getenv
 import time
 from threading import Lock
