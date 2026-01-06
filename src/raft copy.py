@@ -24,13 +24,126 @@ from src.checkpointing import Checkpointing, checkpointed
 import uuid
 import shutil
 from threading import Thread, Event
-from src.args import DocType, get_args_func
-from src.utils import get_chunks, get_doc_chunks,build_or_load_chunks
+
 log_setup()
 
 load_dotenv(override=True)  # take environment variables from .env.
 
 logger = logging.getLogger("raft")
+
+DocType = Literal["api", "pdf", "json", "txt"]
+docTypes = list(get_args(DocType))
+
+SystemPromptKey = Literal["gpt", "llama"]
+systemPromptKeys = list(get_args(SystemPromptKey))
+
+def get_args() -> argparse.Namespace:
+    """
+    Parses and returns the arguments specified by the user's command
+    """
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+    parser.add_argument("--datapath", type=Path, default="test_data", help="If a file, the path at which the document is located. If a folder, the path at which to load all documents")
+    parser.add_argument("--output", type=str, default="results1", help="The path at which to save the dataset")
+    parser.add_argument("--output-format", type=str, default="chat", help="The format of the output dataset.", choices=datasetFormats)
+    parser.add_argument("--output-type", type=str, default="jsonl", help="Type to export the dataset to. Defaults to jsonl.", choices=outputDatasetTypes)
+    parser.add_argument("--output-chat-system-prompt", type=str, default="You are an expert technical assistant for sevensix company.",help="The system prompt to use when the output format is chat")
+    parser.add_argument("--output-completion-prompt-column", type=str, default="prompt", help="The prompt column name to use for the completion format")
+    parser.add_argument("--output-completion-completion-column", type=str, default="completion", help="The completion column name to use for the completion format")
+    parser.add_argument("--distractors", type=int, default=1, help="The number of distractor documents to include per data point / triplet")
+    parser.add_argument("--p", type=float, default=1.0, help="The percentage that the oracle document is included in the context")
+    parser.add_argument("--questions", type=int, default=1, help="The number of data points / triplets to generate per chunk")
+    parser.add_argument("--chunk_size", type=int, default=300, help="The size of each chunk in number of tokens")
+    parser.add_argument("--doctype", type=str, default="txt", help="The type of the document, must be one of the accepted doctypes", choices=docTypes)
+    parser.add_argument("--openai_key", type=str, default=None, help="Your OpenAI key used to make queries to GPT-3.5 or GPT-4")
+    parser.add_argument("--embedding_model", type=str, default="text-embedding-3-small", help="The embedding model to use to encode documents chunks (text-embedding-3-small, ...)")
+    parser.add_argument("--completion_model", type=str, default="gpt-4o-mini", help="The model to use to generate questions and answers (gpt-3.5, gpt-4, ...)")
+    parser.add_argument("--system-prompt-key", default="gpt", help="The system prompt to use to generate the dataset", choices=systemPromptKeys)
+    parser.add_argument("--workers", type=int, default=2, help="The number of worker threads to use to generate the dataset")
+    parser.add_argument("--auto-clean-checkpoints", type=bool, default=False, help="Whether to auto clean the checkpoints after the dataset is generated")
+    parser.add_argument("--qa-threshold", type=int, default=None, help="The number of Q/A samples to generate after which to stop the generation process. Defaults to None, which means generating Q/A samples for all documents")
+
+    args = parser.parse_args()
+    return args
+
+
+def get_chunks(
+    data_path: Path, 
+    doctype: DocType = "pdf", 
+    chunk_size: int = 512, 
+    openai_key: str | None = None,
+    model: str = None
+) -> list[str]:
+    """
+    Takes in a `data_path` and `doctype`, retrieves the document, breaks it down into chunks of size
+    `chunk_size`, and returns the chunks.
+    """
+    chunks = []
+
+    logger.info(f"Retrieving chunks from {data_path} of type {doctype} using the {model} model.")
+
+    if doctype == "api":
+        with open(data_path) as f:
+            api_docs_json = json.load(f)
+        chunks = list(api_docs_json)
+        chunks = [str(api_doc_json) for api_doc_json in api_docs_json]
+
+        for field in ["user_name", "api_name", "api_call", "api_version", "api_arguments", "functionality"]:
+            if field not in chunks[0]:
+                raise TypeError(f"API documentation is not in the format specified by the Gorilla API Store: Missing field `{field}`")
+
+    else:
+        embeddings = build_langchain_embeddings(openai_api_key=openai_key, model=model)
+        chunks = []
+        file_paths = [data_path]
+        if data_path.is_dir():
+            file_paths = list(data_path.rglob('**/*.' + doctype))
+
+        futures = []
+        with tqdm(total=len(file_paths), desc="Chunking", unit="file") as pbar:
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                for file_path in file_paths:
+                    futures.append(executor.submit(get_doc_chunks, embeddings, file_path, doctype, chunk_size))
+                for future in as_completed(futures):
+                    doc_chunks = future.result()
+                    chunks.extend(doc_chunks)
+                    pbar.set_postfix({'chunks': len(chunks)})
+                    pbar.update(1)
+
+    return chunks
+
+def get_doc_chunks(
+    embeddings: OpenAIEmbeddings,
+    file_path: Path, 
+    doctype: DocType = "pdf", 
+    chunk_size: int = 512,
+ ) -> list[str]:
+    if doctype == "json":
+        with open(file_path, 'r') as f:
+            data = json.load(f)
+        text = data["text"]
+    elif doctype == "pdf":
+        text = ""
+        with open(file_path, 'rb') as file:
+            reader = PyPDF2.PdfReader(file)
+            num_pages = len(reader.pages)
+            for page_num in range(num_pages):
+                page = reader.pages[page_num]
+                text += page.extract_text()
+    elif doctype == "txt":
+        with open(file_path, 'r') as file:
+            data = file.read()
+        text = str(data)
+    else:
+        raise TypeError("Document is not one of the accepted types: api, pdf, json, txt")
+    
+    num_chunks = ceil(len(text) / chunk_size)
+    logger.debug(f"Splitting text into {num_chunks} chunks.")
+
+    text_splitter = SemanticChunker(embeddings, number_of_chunks=num_chunks)
+    chunks = text_splitter.create_documents([text])
+    chunks = [chunk.page_content for chunk in chunks]
+    return chunks
 
 def generate_chunk_instructions(chat_completer: ChatCompleter, chunk: Any, x=5, model: str = None) -> list[str]:
     """
@@ -59,33 +172,15 @@ build_qa_messages = {
             {
         "role": "system",
         "content": (
-            "You are a synthetic question generator for a product knowledge base focused on sevensix products. "
-            "Input: You will be given a chunk of product-related text, such as product descriptions, technical specifications, wavelength ranges, features, applications, and product names."
-            "Task: Generate %s realistic, human-like user questions that could be naturally asked by customers, researchers, or engineers and that can be answered directly using ONLY the information in the provided text."
-            """Guidelines:
-                - Write questions as a real human would ask them in sales, support, or research contexts.
-                - Vary the intent and phrasing of the questions, including:
-                - General product inquiries (e.g., “Can you tell me about …”)
-                - Specification-driven questions (e.g., wavelength range, beam quality, output)
-                - Use-case or application questions (e.g., imaging, spectroscopy, OCT, FLIM)
-                - Comparison or selection-oriented questions (without requiring external knowledge)
-                - Use natural language, not keyword lists or documentation-style phrasing.
-                - Do NOT invent specifications, applications, or product names.
-                - Do NOT ask questions that require information outside the given text.
-                - Avoid repetitive wording; each question should feel distinct.
-                
-                Examples of desired question styles:
-                - “I’m looking for a broadband laser source—what options are available here?”
-                - “Can you tell me about the SuperK FIANIUM?”
-                - “What laser light sources cover the 400–2400 nm wavelength range?”
-                - “Is this product suitable for OCT or fluorescence imaging?”
-                - “Recommend some product?”
-
-                Output:
-                - Return only the question.
-                - Do not include explanations, answers, or numbering unless explicitly requested.
-                """
-            
+            "You are a synthetic question generator for a product knowledge base focused on "
+            "laser and light source products. Given a chunk of product text (such as descriptions, "
+            "specifications, features, wavelength ranges, applications, and product names), "
+            "generate %s realistic user questions that could be answered directly using the "
+            "information in the chunk. These questions should be similar in style to human ask queries like:\n"
+            "- \"I'm looking for a fiber laser.\"\n"
+            "- \"Tell us about SuperK.\"\n"
+            "- \"Please tell me about laser light sources in the wavelength range of 400 to 2400 nm.\"\n"
+            "Only generate questions that can be answered from the context."
         ) % (x)
             },
             {"role": "system", "content": "The questions must be concise, factual, and focused on products, specifications, or usage. Include only the questions in your response."},
@@ -189,40 +284,19 @@ prompt_templates = {
         - Provide a summary of how you reached your answer.
         - End your response with the final answer in the form <ANSWER>: $answer, the answer should be succinct.
         - You MUST begin your final answer with the tag "<ANSWER>:".
-        
-        Output structure:
-        1. Brief factual explanation (1–2 short paragraphs)
-        2. Quoted specification evidence (if applicable)
-        3. Final concise answer
 
-        Example question: What laser light source can be recommended for applications requiring a wavelength range of 400–2400 nm?
+        Here are some samples:
 
-        Example answer: To answer this question, we need to identify a laser light source that explicitly supports a wavelength range from 400 to 2400 nm and is suitable for research or industrial use.
-            The provided context describes the specifications, performance, and intended applications of the SuperK FIANIUM product.
-
-            The context directly states that the SuperK FIANIUM operates across the required wavelength range:
-
-            ##begin_quote##
-            ランプ光源と同等の 広帯域スペクトル（400–2400 nm） を持ちながら、高い指向性により 非常に高輝度 を実現しています。
-            ##end_quote##
-
-            This confirms that the product fully satisfies the wavelength requirement mentioned in the question.
-            Additionally, the context explains why this product is recommended over conventional broadband sources, highlighting its laser-based directionality, brightness, and usability:
-
-            ##begin_quote##
-            無料の制御ソフトウェアと高機能フィルタアクセサリにより、レーザー初心者でも必要な波長を簡単に抽出できます。
-            ##end_quote##
-
-            The optical quality and reliability further support this recommendation:
-
-            ##begin_quote##
-            ビーム品質：M² < 1.1
-            ##end_quote##
-
-            Based on these specifications and features, the SuperK FIANIUM is clearly positioned as a high-performance Supercontinuum laser suitable for applications requiring broadband coverage from 400 to 2400 nm.
-
-            <ANSWER>: SuperK FIANIUM, a Supercontinuum laser providing 400–2400 nm broadband coverage with high brightness, excellent beam quality, and flexible wavelength selection.
-                
+        Example question: What movement did the arrest of Jack Weinberg in Sproul Plaza give rise to?
+        Example answer: To answer the question, we need to identify the movement that was sparked by the arrest of Jack Weinberg in Sproul Plaza. 
+        The context provided gives us the necessary information to determine this.
+        First, we look for the part of the context that directly mentions Jack Weinberg's arrest. 
+        We find it in the sentence: ##begin_quote##The arrest in Sproul Plaza of Jack Weinberg, a recent Berkeley alumnus and chair of Campus CORE, 
+        prompted a series of student-led acts of formal remonstrance and civil disobedience that ultimately gave rise to the Free Speech Movement##end_quote##.
+        From this sentence, we understand that the arrest of Jack Weinberg led to student-led acts which then gave rise to a specific movement. 
+        The name of the movement is explicitly mentioned in the same sentence as the "Free Speech Movement."
+        Therefore, based on the context provided, we can conclude that the arrest of Jack Weinberg in Sproul Plaza gave rise to the Free Speech Movement.
+        <ANSWER>: Free Speech Movement
     """,
     "llama": """
         Question: {question}
@@ -340,12 +414,40 @@ def generate_question_cot_answer(
     datapt["instruction"] = context
     return datapt
 
+def build_or_load_chunks(
+        datapath: Path, 
+        doctype: str,
+        CHUNK_SIZE: int, 
+        OPENAPI_API_KEY: str,
+        embedding_model: str,
+        checkpoints_dir: Path, 
+        ):
+    """
+    Builds chunks and checkpoints them if asked
+    """
+    chunks_ds: Dataset = None
+    chunks = None
+    checkpoints_chunks_path = checkpoints_dir / "chunks"
+    logger.info(f"Using checkpoint chunks {checkpoints_chunks_path}")
+    if checkpoints_chunks_path.exists():
+        chunks_ds = Dataset.load_from_disk(checkpoints_chunks_path)
+        chunks = chunks_ds['chunk']
+
+    if not chunks:
+        chunks = get_chunks(datapath, doctype, CHUNK_SIZE, OPENAPI_API_KEY, model=embedding_model)
+
+    if not chunks_ds:
+        chunks_table = pa.table({ "chunk": chunks })
+        chunks_ds = Dataset(chunks_table)
+        chunks_ds.save_to_disk(checkpoints_chunks_path)
+    return chunks
+
 def main():
 
     main_start = time.time()
 
     # run code
-    args = get_args_func()
+    args = get_args()
 
     # Validate arguments
     if args.output_chat_system_prompt and args.output_format != "chat":
@@ -392,30 +494,30 @@ def main():
     cot_answers_ds = stage_generate(chat_completer, checkpoints_dir, chunks, num_questions, max_workers, doctype, completion_model, system_prompt_key, num_distract=NUM_DISTRACT_DOCS, p=args.p, qa_threshold=args.qa_threshold)
 
     # Save as .arrow format
-    # datasets.enable_progress_bars()
-    # cot_answers_ds.save_to_disk(str(output_path))
+    datasets.enable_progress_bars()
+    cot_answers_ds.save_to_disk(str(output_path))
 
-    # # Save as .jsonl format
-    # formatter = DatasetConverter()
+    # Save as .jsonl format
+    formatter = DatasetConverter()
 
-    # # Extract format specific params
-    # format_params = {}
-    # if args.output_chat_system_prompt:
-    #     format_params['system_prompt'] = args.output_chat_system_prompt
+    # Extract format specific params
+    format_params = {}
+    if args.output_chat_system_prompt:
+        format_params['system_prompt'] = args.output_chat_system_prompt
 
-    # if args.output_format == "completion":
-    #     format_params['prompt_column'] = args.output_completion_prompt_column
-    #     format_params['completion_column'] = args.output_completion_completion_column
+    if args.output_format == "completion":
+        format_params['prompt_column'] = args.output_completion_prompt_column
+        format_params['completion_column'] = args.output_completion_completion_column
 
-    # formatter.convert(ds=cot_answers_ds, format=args.output_format, output_path=str(output_path), output_type=args.output_type, params=format_params)
+    formatter.convert(ds=cot_answers_ds, format=args.output_format, output_path=str(output_path), output_type=args.output_type, params=format_params)
 
-    # # Warning, this deletes all intermediary checkpoint files
-    # if auto_clean_checkpoints:
-    #     shutil.rmtree(checkpoints_dir)
+    # Warning, this deletes all intermediary checkpoint files
+    if auto_clean_checkpoints:
+        shutil.rmtree(checkpoints_dir)
 
-    # logger.info(f"Generated {len(cot_answers_ds)} question/answer/CoT/documents samples")
-    # logger.info(f"Dataset saved to {output_path}")
-    # logger.info(f"Done in {time.time() - main_start:.2f}s")
+    logger.info(f"Generated {len(cot_answers_ds)} question/answer/CoT/documents samples")
+    logger.info(f"Dataset saved to {output_path}")
+    logger.info(f"Done in {time.time() - main_start:.2f}s")
 
 class StoppingException(Exception):
     """
@@ -538,6 +640,6 @@ def stage_generate(chat_completer: ChatCompleter, checkpoints_dir, chunks, num_q
 
     return ds
 
-def raft():
+if __name__ == "__main__":
     with MDC(progress="0%"):
         main()
