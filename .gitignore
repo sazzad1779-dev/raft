@@ -12,5 +12,7 @@ venv/
 .ipynb_checkpoints/
 .DS_Store
 results
+results1
 results-checkpoints/
 results1-checkpoints/
+

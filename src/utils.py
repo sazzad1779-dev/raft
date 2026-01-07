@@ -31,33 +31,23 @@ def get_chunks(
 
     logger.info(f"Retrieving chunks from {data_path} of type {doctype} using the {model} model.")
 
-    if doctype == "api":
-        with open(data_path) as f:
-            api_docs_json = json.load(f)
-        chunks = list(api_docs_json)
-        chunks = [str(api_doc_json) for api_doc_json in api_docs_json]
+    # embeddings = build_langchain_embeddings(openai_api_key=openai_key, model=model)
+    embeddings = OpenAIEmbeddings(model=model)
+    chunks = []
+    file_paths = [data_path]
+    if data_path.is_dir():
+        file_paths = list(data_path.rglob('**/*.' + doctype))
 
-        for field in ["user_name", "api_name", "api_call", "api_version", "api_arguments", "functionality"]:
-            if field not in chunks[0]:
-                raise TypeError(f"API documentation is not in the format specified by the Gorilla API Store: Missing field `{field}`")
-
-    else:
-        embeddings = build_langchain_embeddings(openai_api_key=openai_key, model=model)
-        chunks = []
-        file_paths = [data_path]
-        if data_path.is_dir():
-            file_paths = list(data_path.rglob('**/*.' + doctype))
-
-        futures = []
-        with tqdm(total=len(file_paths), desc="Chunking", unit="file") as pbar:
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                for file_path in file_paths:
-                    futures.append(executor.submit(get_doc_chunks, embeddings, file_path, doctype, chunk_size))
-                for future in as_completed(futures):
-                    doc_chunks = future.result()
-                    chunks.extend(doc_chunks)
-                    pbar.set_postfix({'chunks': len(chunks)})
-                    pbar.update(1)
+    futures = []
+    with tqdm(total=len(file_paths), desc="Chunking", unit="file") as pbar:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            for file_path in file_paths:
+                futures.append(executor.submit(get_doc_chunks, embeddings, file_path, doctype, chunk_size))
+            for future in as_completed(futures):
+                doc_chunks = future.result()
+                chunks.extend(doc_chunks)
+                pbar.set_postfix({'chunks': len(chunks)})
+                pbar.update(1)
 
     return chunks
 
@@ -121,3 +111,19 @@ def build_or_load_chunks(
         chunks_ds = Dataset(chunks_table)
         chunks_ds.save_to_disk(checkpoints_chunks_path)
     return chunks
+
+def strip_str(s: str) -> str:
+    """
+    Helper function for helping format strings returned by GPT-4.
+    """
+    l, r = 0, len(s)-1
+    beg_found = False
+    for i in range(len(s)):
+        if s[i].isalpha():
+            if not beg_found:
+                l = i
+                beg_found = True
+            else:
+                r = i 
+    r += 2
+    return s[l:min(r, len(s))]

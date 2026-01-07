@@ -4,341 +4,23 @@ from mdc import MDC
 from tqdm import tqdm
 from src.logconf import log_setup
 import logging
-from typing import Literal, Any, get_args
-import argparse
 from openai import OpenAI, BadRequestError
 import datasets
 from datasets import Dataset, concatenate_datasets
 import pyarrow as pa
-import json
-import PyPDF2
-import random
-from langchain_experimental.text_splitter import SemanticChunker
-from langchain_openai.embeddings import OpenAIEmbeddings
 from src.client_utils import build_openai_client, build_langchain_embeddings, UsageStats, ChatCompleter
-from math import ceil
-from src.format import DatasetConverter, datasetFormats, outputDatasetTypes
 from pathlib import Path
 from dotenv import load_dotenv
 from src.checkpointing import Checkpointing, checkpointed
-import uuid
-import shutil
 from threading import Thread, Event
 from src.args import DocType, get_args_func
-from src.utils import get_chunks, get_doc_chunks,build_or_load_chunks
+from src.utils import get_chunks, get_doc_chunks,build_or_load_chunks , strip_str
+from src.generate import generate_instructions_gen, generate_question_cot_answer
 log_setup()
 
 load_dotenv(override=True)  # take environment variables from .env.
 
 logger = logging.getLogger("raft")
-
-def generate_chunk_instructions(chat_completer: ChatCompleter, chunk: Any, x=5, model: str = None) -> list[str]:
-    """
-    Generates `x` questions / use cases for `api_call`. Used when the input document is of type `api`.
-    """
-    response = chat_completer(
-        model=model,
-        messages=[
-            {"role": "system", "content": "You are a synthetic instruction-api pair generator. Given an API endpoint in the form of a JSON object, generate %s example queries of instructions a user could ask and would be answered by invoking the API call. For example, if the given API call is the `service.users().getProfile(userId='me').execute()` call from the Gmail API, an example query could be 'How can I fetch my Gmail account's email address?'" % (x)},
-            {"role": "system", "content": "The API endpoint is a JSON object with required params: user_name, api_name, api_call, api_version, api_arguments, functionality, and optional params: env_requirements, example_code, meta_data, Questions"},
-            {"role": "system", "content": "For instance, if the api call contains: {'user_name': 'felixzhu555', 'api_name': 'Google Maps - Address Validation', 'api_call': 'Client.addressvalidation(addressLines, regionCode=region_code, locality=locality, enableUspsCass=boolean)', 'api_version': '4.10.0', 'api_arguments': {}, 'functionality': 'Validate an address and its components, standardize the address for mailing, and determine the best known geocode for it.', 'env_requirements': ['googlemaps'], 'example_code': 'client = googlemaps.Client(key='YOUR_API_KEY')\nresponse = client.addressvalidation('1600 Amphitheatre Pk', regionCode='US', locality='Mountain View', enableUspsCass=True)', 'meta_data': {'description': 'The googlemaps python client is an abstraction for the Google Maps API that requires python 3.5+. Each Google Maps web service request requires an API key or client ID. API keys are generated in the 'Credentials' page of the 'APIs & Services' tab of Google Cloud console. This key should be kept secret on your server.'}, 'questions': []}, an example instruction would be 'Validate the following address: University Avenue and, Oxford St, Berkeley, CA 94720.'"},
-            {"role": "system", "content": "Don't mention 'API' or use any hints or the name of the API. In one-third of the queries, make sure to include a specific example, like 'Validate this address: 123 Harrison St, Oakland CA'. Include ONLY the queries in your response."},
-            {"role": "user", "content": str(chunk)}
-        ]
-    )
-
-    content = response.choices[0].message.content
-    queries = content.split('\n')
-    queries = [strip_str(q) for q in queries]
-    queries = [q for q in queries if any(c.isalpha() for c in q)]
-
-    return queries
-
-build_qa_messages = {
-    "gpt": lambda chunk, x : [
-            {
-        "role": "system",
-        "content": (
-            "You are a synthetic question generator for a product knowledge base focused on sevensix products. "
-            "Input: You will be given a chunk of product-related text, such as product descriptions, technical specifications, wavelength ranges, features, applications, and product names."
-            "Task: Generate %s realistic, human-like user questions that could be naturally asked by customers, researchers, or engineers and that can be answered directly using ONLY the information in the provided text."
-            """Guidelines:
-                - Write questions as a real human would ask them in sales, support, or research contexts.
-                - Vary the intent and phrasing of the questions, including:
-                - General product inquiries (e.g., “Can you tell me about …”)
-                - Specification-driven questions (e.g., wavelength range, beam quality, output)
-                - Use-case or application questions (e.g., imaging, spectroscopy, OCT, FLIM)
-                - Comparison or selection-oriented questions (without requiring external knowledge)
-                - Use natural language, not keyword lists or documentation-style phrasing.
-                - Do NOT invent specifications, applications, or product names.
-                - Do NOT ask questions that require information outside the given text.
-                - Avoid repetitive wording; each question should feel distinct.
-                
-                Examples of desired question styles:
-                - “I’m looking for a broadband laser source—what options are available here?”
-                - “Can you tell me about the SuperK FIANIUM?”
-                - “What laser light sources cover the 400–2400 nm wavelength range?”
-                - “Is this product suitable for OCT or fluorescence imaging?”
-                - “Recommend some product?”
-
-                Output:
-                - Return only the question.
-                - Do not include explanations, answers, or numbering unless explicitly requested.
-                """
-            
-        ) % (x)
-            },
-            {"role": "system", "content": "The questions must be concise, factual, and focused on products, specifications, or usage. Include only the questions in your response."},
-            {"role": "user", "content": str(chunk)}
-        ],
-    "llama": lambda chunk, x : [
-        
-            {"role": "system", "content": 
-                """You are a synthetic question generator.
-                
-                Instructions:
-                - Given a chunk of context about some topic(s), generate %s example questions a user could ask
-                - Questions should be answerable using only information from the chunk.
-                - Generate one question per line
-                - Generate only questions
-                - Questions should be succinct
-
-                Here are some samples:
-                Context: A Wikipedia paragraph about the United States, 
-                Question: How many states are in the United States?
-
-                Context: A Wikipedia paragraph about vampire bats, 
-                Question: What are the different species of vampire bats?
-                """ % (x)},
-            {"role": "system", "content": "The questions should be able to be answered in a few words or less. Include only the questions in your response."},
-            {"role": "user", "content": str(chunk)}
-        ]
-}
-
-def generate_instructions_gen(chat_completer: ChatCompleter, chunk: Any, x: int = 5, model: str = None, prompt_key : str = "gpt") -> list[str]:
-    """
-    Generates `x` questions / use cases for `chunk`. Used when the input document is of general types 
-    `pdf`, `json`, or `txt`.
-    """
-    try:
-        response = chat_completer(
-            model=model,
-            messages=build_qa_messages[prompt_key](chunk, x),
-            max_tokens=min(25 * x, 512), # 25 tokens per question
-        )
-    except BadRequestError as e:
-        if e.code == "content_filter":
-            logger.warning(f"Got content filter error, skipping chunk: {e.message}")
-            return []
-        raise e
-
-    content = response.choices[0].message.content
-    queries = content.split('\n') if content else []
-    #queries = [strip_str(q) for q in queries]
-    queries = [q for q in queries if any(c.isalpha() for c in q)]
-
-    return queries
-
-def strip_str(s: str) -> str:
-    """
-    Helper function for helping format strings returned by GPT-4.
-    """
-    l, r = 0, len(s)-1
-    beg_found = False
-    for i in range(len(s)):
-        if s[i].isalpha():
-            if not beg_found:
-                l = i
-                beg_found = True
-            else:
-                r = i 
-    r += 2
-    return s[l:min(r, len(s))]
-
-def encode_question(question: str, api: Any) -> list[str]:
-    """
-    Encode multiple prompt instructions into a single string for the `api` case.
-    """
-    prompts = []
-        
-    prompt = question + "\nWrite a python program to call API in " + str(api) + ".\n\nThe answer should follow the format: <<<domain>>> $DOMAIN \n, <<<api_call>>>: $API_CALL \n, <<<api_provider>>>: $API_PROVIDER \n, <<<explanation>>>: $EXPLANATION \n, <<<code>>>: $CODE}. Here are the requirements:\n \n2. The $DOMAIN should be the domain of the API ('N/A' if unknown). The $API_CALL should have only 1 line of code that calls api.\n3. The $API_PROVIDER should be the programming framework used.\n4. $EXPLANATION should be a numbered, step-by-step explanation.\n5. The $CODE is the python code.\n6. Do not repeat the format in your answer."
-    prompts.append({"role": "system", "content": "You are a helpful API writer who can write APIs based on requirements."})
-    prompts.append({"role": "user", "content": prompt})
-    return prompts
-
-
-prompt_templates = {
-    # "gpt": """
-    #     Question: {question}\nContext: {context}\n
-    #     Answer this question using the information given in the context above. Here is things to pay attention to: 
-    #     - First provide step-by-step reasoning on how to answer the question. 
-    #     - In the reasoning, if you need to copy paste some sentences from the context, include them in ##begin_quote## and ##end_quote##. This would mean that things outside of ##begin_quote## and ##end_quote## are not directly copy paste from the context. 
-    #     - End your response with final answer in the form <ANSWER>: $answer, the answer should be succinct.
-    #     You MUST begin your final answer with the tag "<ANSWER>:".
-    # """,
-    "gpt": """
-        Question: {question}
-        Context: {context}
-
-        Answer this question using the information given in the context above.
-        
-        Instructions:
-        - Provide step-by-step reasoning on how to answer the question.
-        - Explain which parts of the context are meaningful and why.
-        - Copy paste the relevant sentences from the context in ##begin_quote## and ##end_quote##.
-        - Provide a summary of how you reached your answer.
-        - End your response with the final answer in the form <ANSWER>: $answer, the answer should be succinct.
-        - You MUST begin your final answer with the tag "<ANSWER>:".
-        
-        Output structure:
-        1. Brief factual explanation (1–2 short paragraphs)
-        2. Quoted specification evidence (if applicable)
-        3. Final concise answer
-
-        Example question: What laser light source can be recommended for applications requiring a wavelength range of 400–2400 nm?
-
-        Example answer: To answer this question, we need to identify a laser light source that explicitly supports a wavelength range from 400 to 2400 nm and is suitable for research or industrial use.
-            The provided context describes the specifications, performance, and intended applications of the SuperK FIANIUM product.
-
-            The context directly states that the SuperK FIANIUM operates across the required wavelength range:
-
-            ##begin_quote##
-            ランプ光源と同等の 広帯域スペクトル（400–2400 nm） を持ちながら、高い指向性により 非常に高輝度 を実現しています。
-            ##end_quote##
-
-            This confirms that the product fully satisfies the wavelength requirement mentioned in the question.
-            Additionally, the context explains why this product is recommended over conventional broadband sources, highlighting its laser-based directionality, brightness, and usability:
-
-            ##begin_quote##
-            無料の制御ソフトウェアと高機能フィルタアクセサリにより、レーザー初心者でも必要な波長を簡単に抽出できます。
-            ##end_quote##
-
-            The optical quality and reliability further support this recommendation:
-
-            ##begin_quote##
-            ビーム品質：M² < 1.1
-            ##end_quote##
-
-            Based on these specifications and features, the SuperK FIANIUM is clearly positioned as a high-performance Supercontinuum laser suitable for applications requiring broadband coverage from 400 to 2400 nm.
-
-            <ANSWER>: SuperK FIANIUM, a Supercontinuum laser providing 400–2400 nm broadband coverage with high brightness, excellent beam quality, and flexible wavelength selection.
-                
-    """,
-    "llama": """
-        Question: {question}
-        Context: {context}
-
-        Answer this question using the information given in the context above.
-        
-        Instructions:
-        - Provide step-by-step reasoning on how to answer the question.
-        - Explain which parts of the context are meaningful and why.
-        - Copy paste the relevant sentences from the context in ##begin_quote## and ##end_quote##.
-        - Provide a summary of how you reached your answer.
-        - End your response with the final answer in the form <ANSWER>: $answer, the answer should be succinct.
-        - You MUST begin your final answer with the tag "<ANSWER>:".
-
-        Here are some samples:
-
-        Example question: What movement did the arrest of Jack Weinberg in Sproul Plaza give rise to?
-        Example answer: To answer the question, we need to identify the movement that was sparked by the arrest of Jack Weinberg in Sproul Plaza. 
-        The context provided gives us the necessary information to determine this.
-        First, we look for the part of the context that directly mentions Jack Weinberg's arrest. 
-        We find it in the sentence: ##begin_quote##The arrest in Sproul Plaza of Jack Weinberg, a recent Berkeley alumnus and chair of Campus CORE, 
-        prompted a series of student-led acts of formal remonstrance and civil disobedience that ultimately gave rise to the Free Speech Movement##end_quote##.
-        From this sentence, we understand that the arrest of Jack Weinberg led to student-led acts which then gave rise to a specific movement. 
-        The name of the movement is explicitly mentioned in the same sentence as the "Free Speech Movement."
-        Therefore, based on the context provided, we can conclude that the arrest of Jack Weinberg in Sproul Plaza gave rise to the Free Speech Movement.
-        <ANSWER>: Free Speech Movement
-
-
-    """
-    }
-
-def encode_question_gen(question: str, chunk: Any, prompt_key : str = "gpt") -> list[str]:
-    """
-    Encode multiple prompt instructions into a single string for the general case (`pdf`, `json`, or `txt`).
-    """
-    
-    prompts = []
-
-    prompt = prompt_templates[prompt_key].format(question=question, context=str(chunk))
-    prompts.append({"role": "system", "content": "You are a helpful question answerer who can provide an answer given a question and relevant context."})
-    prompts.append({"role": "user", "content": prompt})
-    return prompts
-
-def generate_label(chat_completer: ChatCompleter, question: str, context: Any, doctype: DocType = "pdf", model: str = None, prompt_key : str = "gpt") -> str | None:
-    """
-    Generates the label / answer to `question` using `context` and GPT-4.
-    """
-    question = encode_question(question, context) if doctype == "api" else encode_question_gen(question, context, prompt_key)
-    response = chat_completer(
-        model=model,
-        messages=question,
-        n=1,
-        temperature=0,
-        max_tokens=512,
-    )
-    response = response.choices[0].message.content
-    return response
-
-def generate_question_cot_answer(
-        chat_completer: ChatCompleter,
-        chunks: list[str], 
-        chunk: str, 
-        chunk_id, 
-        question,
-        doctype: DocType = "api", 
-        num_distract: int = 3, 
-        p: float = 0.8,
-        model: str = None,
-        prompt_key: str = "gpt",
-        ):
-    datapt = {
-            "id": None,
-            "type": None,
-            "question": None,
-            "context": None,
-            "oracle_context": None,
-            "cot_answer": None
-        }
-
-    datapt["id"] = str(uuid.uuid4())
-    datapt["type"] = "api call" if doctype == "api" else "general"
-    datapt["question"] = question
-
-    # add num_distract distractor docs
-    docs = [chunk]
-    indices = list(range(0, len(chunks)))
-    indices.remove(chunk_id)
-    for j in random.sample(indices, num_distract):
-        docs.append(chunks[j])
-    # decides whether to add oracle document
-    oracle = random.uniform(0, 1) < p
-    if not oracle:
-        docs[0] = chunks[random.sample(indices, 1)[0]]
-    random.shuffle(docs)
-
-    d = {
-        "title": [],
-        "sentences": []
-    }
-
-    d["title"].append(["placeholder_title"]*(num_distract+1))
-    d["sentences"].append(docs)
-    datapt["context"] = d
-    datapt["oracle_context"] = chunk
-
-    # add answer to q
-    datapt["cot_answer"] = generate_label(chat_completer, question, chunk, doctype, model=model, prompt_key=prompt_key)
-
-    # construct model instruction 
-    context = ""
-    for doc in docs:
-        context += "<DOCUMENT>" + str(doc) + "</DOCUMENT>\n"
-    context += question
-    datapt["instruction"] = context
-    return datapt
 
 def main():
 
@@ -392,9 +74,10 @@ def main():
     cot_answers_ds = stage_generate(chat_completer, checkpoints_dir, chunks, num_questions, max_workers, doctype, completion_model, system_prompt_key, num_distract=NUM_DISTRACT_DOCS, p=args.p, qa_threshold=args.qa_threshold)
 
     # Save as .arrow format
-    # datasets.enable_progress_bars()
-    # cot_answers_ds.save_to_disk(str(output_path))
+    datasets.enable_progress_bars()
+    cot_answers_ds.save_to_disk(str(output_path))
 
+    ############ Formater Operations ############
     # # Save as .jsonl format
     # formatter = DatasetConverter()
 
@@ -441,7 +124,7 @@ def stage_generate(chat_completer: ChatCompleter, checkpoints_dir, chunks, num_q
         """
         Generates a dataset of instructions for a given chunk.
         """
-        questions = generate_chunk_instructions(chunk=chunk, *args, **kwargs) if doctype == "api" else generate_instructions_gen(chunk=chunk, *args, **kwargs)
+        questions = generate_instructions_gen(chunk=chunk, *args, **kwargs)
         chunk_question_pairs = [{"chunk": chunk, "chunk_id": chunk_id, "question": question} for question in questions]
         questions_ds = Dataset.from_list(chunk_question_pairs)
         return questions_ds

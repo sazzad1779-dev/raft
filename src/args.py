@@ -28,7 +28,7 @@ def get_args_func() -> argparse.Namespace:
     parser.add_argument("--chunk_size", type=int, default=300, help="The size of each chunk in number of tokens")
     parser.add_argument("--doctype", type=str, default="txt", help="The type of the document, must be one of the accepted doctypes", choices=docTypes)
     parser.add_argument("--openai_key", type=str, default=None, help="Your OpenAI key used to make queries to GPT-3.5 or GPT-4")
-    parser.add_argument("--embedding_model", type=str, default="text-embedding-ada-002", help="The embedding model to use to encode documents chunks (text-embedding-ada-002, ...)")
+    parser.add_argument("--embedding_model", type=str, default="text-embedding-3-small", help="The embedding model to use to encode documents chunks (text-embedding-3-small, ...)")
     parser.add_argument("--completion_model", type=str, default="gpt-4", help="The model to use to generate questions and answers (gpt-3.5, gpt-4, ...)")
     parser.add_argument("--system-prompt-key", default="gpt", help="The system prompt to use to generate the dataset", choices=systemPromptKeys)
     parser.add_argument("--workers", type=int, default=2, help="The number of worker threads to use to generate the dataset")
