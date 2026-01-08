@@ -15,7 +15,7 @@ from src.checkpointing import Checkpointing, checkpointed
 from threading import Thread, Event
 from src.args import DocType, get_args_func
 from src.utils import get_chunks, get_doc_chunks,build_or_load_chunks , strip_str
-from src.generate import generate_instructions_gen, generate_question_cot_answer
+from src.generate import generate_question, generate_question_cot_answer
 log_setup()
 
 load_dotenv(override=True)  # take environment variables from .env.
@@ -124,7 +124,7 @@ def stage_generate(chat_completer: ChatCompleter, checkpoints_dir, chunks, num_q
         """
         Generates a dataset of instructions for a given chunk.
         """
-        questions = generate_instructions_gen(chunk=chunk, *args, **kwargs)
+        questions = generate_question(chunk=chunk, *args, **kwargs)
         chunk_question_pairs = [{"chunk": chunk, "chunk_id": chunk_id, "question": question} for question in questions]
         questions_ds = Dataset.from_list(chunk_question_pairs)
         return questions_ds

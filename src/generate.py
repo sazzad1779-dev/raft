@@ -10,7 +10,7 @@ import uuid
 log_setup()# take environment variables from .env.
 logger = logging.getLogger("raft")
 
-def generate_instructions_gen(chat_completer: ChatCompleter, chunk: Any, x: int = 5, model: str = None, prompt_key : str = "gpt") -> list[str]:
+def generate_question(chat_completer: ChatCompleter, chunk: Any, x: int = 5, model: str = None, prompt_key : str = "gpt") -> list[str]:
     """
     Generates `x` questions / use cases for `chunk`. Used when the input document is of general types 
     `pdf`, `json`, or `txt`.
@@ -19,7 +19,7 @@ def generate_instructions_gen(chat_completer: ChatCompleter, chunk: Any, x: int 
         response = chat_completer(
             model=model,
             messages=build_qa_messages[prompt_key](chunk, x),
-            max_tokens=min(25 * x, 512), # 25 tokens per question
+            max_tokens=min(100 * x, 1024), # 25 tokens per question
         )
     except BadRequestError as e:
         if e.code == "content_filter":
@@ -46,7 +46,7 @@ def encode_question_gen(question: str, chunk: Any, prompt_key : str = "gpt") -> 
     prompts.append({"role": "user", "content": prompt})
     return prompts
 
-def generate_label(chat_completer: ChatCompleter, question: str, context: Any, doctype: DocType = "pdf", model: str = None, prompt_key : str = "gpt") -> str | None:
+def generate_answer(chat_completer: ChatCompleter, question: str, context: Any, doctype: DocType = "pdf", model: str = None, prompt_key : str = "gpt") -> str | None:
     """
     Generates the label / answer to `question` using `context` and GPT-4.
     """
@@ -56,7 +56,7 @@ def generate_label(chat_completer: ChatCompleter, question: str, context: Any, d
         messages=question,
         n=1,
         temperature=0,
-        max_tokens=512,
+        max_tokens=1024,
     )
     response = response.choices[0].message.content
     return response
@@ -109,7 +109,7 @@ def generate_question_cot_answer(
     datapt["oracle_context"] = chunk
 
     # add answer to q
-    datapt["cot_answer"] = generate_label(chat_completer, question, chunk, doctype, model=model, prompt_key=prompt_key)
+    datapt["cot_answer"] = generate_answer(chat_completer, question, chunk, doctype, model=model, prompt_key=prompt_key)
 
     # construct model instruction 
     context = ""

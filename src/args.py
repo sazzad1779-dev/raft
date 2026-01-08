@@ -24,7 +24,7 @@ def get_args_func() -> argparse.Namespace:
     parser.add_argument("--output-completion-completion-column", type=str, default="completion", help="The completion column name to use for the completion format")
     parser.add_argument("--distractors", type=int, default=1, help="The number of distractor documents to include per data point / triplet")
     parser.add_argument("--p", type=float, default=1.0, help="The percentage that the oracle document is included in the context")
-    parser.add_argument("--questions", type=int, default=1, help="The number of data points / triplets to generate per chunk")
+    parser.add_argument("--questions", type=int, default=10, help="The number of data points / triplets to generate per chunk")
     parser.add_argument("--chunk_size", type=int, default=300, help="The size of each chunk in number of tokens")
     parser.add_argument("--doctype", type=str, default="txt", help="The type of the document, must be one of the accepted doctypes", choices=docTypes)
     parser.add_argument("--openai_key", type=str, default=None, help="Your OpenAI key used to make queries to GPT-3.5 or GPT-4")
