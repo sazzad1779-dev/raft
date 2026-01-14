@@ -7,6 +7,8 @@ from src.args import DocType
 import logging
 import random
 import uuid
+import json
+
 log_setup()# take environment variables from .env.
 logger = logging.getLogger("raft")
 
@@ -33,6 +35,70 @@ def generate_question(chat_completer: ChatCompleter, chunk: Any, x: int = 5, mod
     queries = [q for q in queries if any(c.isalpha() for c in q)]
     return queries
 
+
+question_schema = {
+    "type": "object",
+    "properties": {
+        "questions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "question": {"type": "string"},
+                    "type": {
+                        "type": "string",
+                        "enum": ["factual", "conceptual", "procedural"]
+                    },
+                    "difficulty": {
+                        "type": "string",
+                        "enum": ["grounded", "medium", "hard"]
+                    },
+                    "grounding_evidence": {"type": "string"}
+                },
+                "required": [
+                    "question",
+                    "type",
+                    "difficulty",
+                    "grounding_evidence"
+                ],
+                "additionalProperties": False
+            }
+        }
+    },
+    "required": ["questions"],
+    "additionalProperties": False
+}
+
+
+def generate_question_json(chat_completer: ChatCompleter, chunk: Any, x: int = 5, model: str = None, prompt_key : str = "gpt") -> list[str]:
+    """
+    Generates `x` questions / use cases for `chunk`. Used when the input document is of general types 
+    `pdf`, `json`, or `txt`.
+    """
+    try:
+        response = chat_completer(
+            model=model,
+            messages=build_qa_messages[prompt_key](chunk, x),
+            max_tokens=min(100 * x, 1024), # 25 tokens per question
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "raft_questions",
+                    "schema": question_schema
+                }
+            }
+        )
+    except BadRequestError as e:
+        if e.code == "content_filter":
+            logger.warning(f"Got content filter error, skipping chunk: {e.message}")
+            return []
+        raise e
+
+    content = response.choices[0].message.content
+    data = json.loads(content)
+
+    questions = data["questions"]
+    return questions
 
 def encode_question_gen(question: str, chunk: Any, prompt_key : str = "gpt") -> list[str]:
     """

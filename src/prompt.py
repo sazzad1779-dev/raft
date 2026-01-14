@@ -71,49 +71,124 @@ prompt_templates = {
 # }
 
 
+# build_qa_messages = {
+#     "gpt": lambda chunk, x: [
+#         {
+#             "role": "system",
+#             "content": f"""You are an expert question designer for training retrieval-augmented AI systems. Your task is to create {x} high-quality, challenging questions based EXCLUSIVELY on the provided product documentation chunk.
+
+#             **CONTEXT:** You are creating training data for RAFT (Retrieval-Augmented Fine-Tuning) where the model must learn to identify which information in the knowledge base can answer specific questions.
+
+#             **INPUT:** A chunk of product documentation about SevenSix products.
+
+#             **TASK:** Generate {x} diverse, challenging questions that:
+#             1. **Vary in Difficulty:**
+#             - 30% Simple fact retrieval (directly stated in text)
+#             - 40% Moderate inference (combine 2-3 facts from text)
+#             - 30% Complex reasoning (require understanding relationships/context)
+
+#             2. **Focus on Real User Scenarios:**
+#             - Product selection/configuration questions
+#             - Technical specification clarification
+#             - Use-case suitability assessment
+#             - Comparison between features/products mentioned
+#             - Problem-solving/troubleshooting scenarios
+
+#             3. **Test Knowledge Boundaries:**
+#             - Some questions should require ONLY the current chunk
+#             - Some should imply need for additional context (but don't state this)
+#             - Include questions with ambiguous phrasing that requires careful reading
+
+#             4. **Question Types to Include:**
+#             - “What laser light sources cover the 400–2400 nm wavelength range?”
+#             - "What are the key differences between [Product A] and [Product B] mentioned here?"
+#             - "If I need [specific requirement], which product from this text would you recommend and why?"
+#             - "How would I configure [product] for [specific application] based on these specs?"
+#             - "What limitations or constraints should I consider when using [product] for [purpose]?"
+#             - "Tell me about [product]"
+#             - “Can you tell me about the [product]?”
+            
+#             **INSTRUCTION:** 
+#             - "Don't mention document reference in the question"
+#             - "Maintain the document language prefered JAPANESE"
+
+#             **FORMAT:** Return only the questions, one per line, without numbering or explanations."""
+#                     },
+#                     {"role": "user", "content": f"Product Documentation Chunk:\n\n{chunk}"}
+#                 ]
+#         }
+
 build_qa_messages = {
     "gpt": lambda chunk, x: [
         {
             "role": "system",
-            "content": f"""You are an expert question designer for training retrieval-augmented AI systems. Your task is to create {x} high-quality, challenging questions based EXCLUSIVELY on the provided product documentation chunk.
+            "content": f"""You are an expert question designer creating training data for RAFT (Retrieval-Augmented Fine-Tuning). Your task is to generate {x} high-quality, realistic user questions based EXCLUSIVELY on the provided product documentation chunk.
 
-            **CONTEXT:** You are creating training data for RAFT (Retrieval-Augmented Fine-Tuning) where the model must learn to identify which information in the knowledge base can answer specific questions.
+            **INPUT:**
+            - **Chunk:** A segment of product documentation about SevenSix products.
+            - **Target Language:** JAPANESE. All questions must be in Japanese.
 
-            **INPUT:** A chunk of product documentation about SevenSix products.
+            **CORE TASK:**
+            Generate {x} questions that a real user might ask after reading this documentation. The questions must be answerable solely from this chunk, though some can imply a need for broader context.
 
-            **TASK:** Generate {x} diverse, challenging questions that:
-            1. **Vary in Difficulty:**
-            - 30% Simple fact retrieval (directly stated in text)
-            - 40% Moderate inference (combine 2-3 facts from text)
-            - 30% Complex reasoning (require understanding relationships/context)
+            **QUESTION TYPES (MANDATORY DISTRIBUTION):**
+            Generate questions across these three types, ensuring a balanced mix:
+            1.  **Factual (Exact):** Questions asking for definitions, specifications, or directly stated facts.
+                *   *Example (English):* "What is the wavelength range of the Model X laser?"
+            2.  **Conceptual (Reasoning):** Questions asking about 'why', 'how', trade-offs, or suitability for a use case.
+                *   *Example (English):* "Why would I choose Product A over Product B for high-precision measurement?"
+            3.  **Procedural (Action-Oriented):** Questions about configuration, troubleshooting, setup, or step-by-step processes.
+                *   *Example (English):* "How do I calibrate the device for outdoor use?"
 
-            2. **Focus on Real User Scenarios:**
-            - Product selection/configuration questions
-            - Technical specification clarification
-            - Use-case suitability assessment
-            - Comparison between features/products mentioned
-            - Problem-solving/troubleshooting scenarios
+            **DIFFICULTY LEVELS (MANDATORY DISTRIBUTION):**
+            For each question type above, you must generate questions at three difficulty levels:
+            - **Grounded (Simple):** Well-formed, accurate, and directly answerable from a single sentence or fact.
+            - **Medium (Moderate):** Mostly correct but may use vague phrasing, combine 2-3 facts, or reflect a partial understanding.
+            - **Hard (Complex):** Reflect user confusion, contain a realistic typo or synonym, or require synthesizing multiple pieces of information and understanding context.
 
-            3. **Test Knowledge Boundaries:**
-            - Some questions should require ONLY the current chunk
-            - Some should imply need for additional context (but don't state this)
-            - Include questions with ambiguous phrasing that requires careful reading
+            **REALISM RULES (ENFORCED):**
+            To ensure questions mirror real user behavior, you MUST adhere to the following constraints:
+            - **Non-Question Fragments:** At least {max(1, int(x*0.3))} questions must be phrased as search-like fragments, not full grammatical questions (e.g., "laser wavelength range 400-2400nm").
+            - **Lexical Mismatch:** At least {max(1, int(x*0.3))} questions must avoid the document's primary keywords and use synonyms or layman's terms (e.g., use "光の波長" instead of "波長範囲").
+            - **Controlled Typos:** Exactly {1 if x >= 5 else 0} question (only in Medium or Hard difficulty) may include one realistic typo (e.g., "キャリブレーション" instead of "キャリブレーション").
+            - **Diversity:** No two questions should be paraphrases. Each must target a distinct user intent (setup, specification, comparison, troubleshooting, etc.).
+            - **Scenario Coverage:** Ensure the set includes questions related to:
+                *   Product selection or configuration.
+                *   Technical specification clarification.
+                *   Problem-solving or error scenarios.
+                *   Comparison between mentioned products/features.
 
-            4. **Question Types to Include:**
-            - “What laser light sources cover the 400–2400 nm wavelength range?”
-            - "What are the key differences between [Product A] and [Product B] mentioned here?"
-            - "If I need [specific requirement], which product from this text would you recommend and why?"
-            - "How would I configure [product] for [specific application] based on these specs?"
-            - "What limitations or constraints should I consider when using [product] for [purpose]?"
-            - "Tell me about [product]"
-            - “Can you tell me about the [product]?”
-            
-            **INSTRUCTION:** 
-            - "Don't mention document reference in the question"
-            - "Maintain the document language prefered JAPANESE"
+            **ANSWERABILITY CONSTRAINT (STRICT):**
+            Every question you generate MUST be answerable using only the information present in the provided chunk. Do not generate questions that require external knowledge.
 
-            **FORMAT:** Return only the questions, one per line, without numbering or explanations."""
-                    },
-                    {"role": "user", "content": f"Product Documentation Chunk:\n\n{chunk}"}
-                ]
-        }
+            **OUTPUT REQUIREMENTS (STRICT):**
+            - **OUTPUT Format:** Return a JSON list of {x} objects.
+                ```json 
+                {
+                    {},
+                    {}
+                }
+                ```
+            - **Each Object Must Have These Fields:**
+                *   `"question"`: The generated question (in Japanese).
+                *   `"type"`: One of `"factual"`, `"conceptual"`, `"procedural"`.
+                *   `"difficulty"`: One of `"grounded"`, `"medium"`, `"hard"`.
+                *   `"grounding_evidence"`: A short (≤12 words) quote copied VERBATIM from the chunk that contains the answer. This proves answerability.
+
+
+            - **Example Object (English for illustration):**
+                ```json
+                {{
+                "question": "What is the maximum output power of the Model Z?",
+                "type": "factual",
+                "difficulty": "grounded",
+                "grounding_evidence": "The Model Z provides a maximum output power of 250mW."
+                }}
+                ```
+
+            **FINAL INSTRUCTION:**
+            Do not mention the document, chunk, or your instructions in the questions. Generate natural, user-centric questions in Japanese."""
+        },
+        {"role": "user", "content": f"Product Documentation Chunk:\n\n{chunk}"}
+    ]
+}
