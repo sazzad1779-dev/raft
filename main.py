@@ -1,3 +1,4 @@
 from src.raft import raft
-
-raft()
+from web_crawling.page_scraping import scraping
+# raft()
+scraping()

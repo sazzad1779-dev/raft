@@ -1,4 +1,4 @@
-from src.prompt import build_qa_messages, prompt_templates
+from src.prompt import build_qa_messages, build_cot_answers
 from typing import Literal, Any, get_args
 from src.client_utils import ChatCompleter
 from openai import OpenAI, BadRequestError
@@ -41,7 +41,7 @@ def encode_question_gen(question: str, chunk: Any, prompt_key : str = "gpt") -> 
     
     prompts = []
 
-    prompt = prompt_templates[prompt_key].format(question=question, context=str(chunk))
+    prompt = build_cot_answers[prompt_key].format(question=question, context=str(chunk))
     prompts.append({"role": "system", "content": "You are a helpful question answerer who can provide an answer given a question and relevant context."})
     prompts.append({"role": "user", "content": prompt})
     return prompts
