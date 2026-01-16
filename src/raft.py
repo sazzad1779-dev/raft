@@ -15,7 +15,7 @@ from src.checkpointing import Checkpointing, checkpointed
 from threading import Thread, Event
 from src.args import DocType, get_args_func
 from src.utils import get_chunks, get_doc_chunks,build_or_load_chunks , strip_str
-from src.generate import generate_question, generate_question_cot_answer
+from src.generate import generate_question, generate_ques_answer,generate_question_json
 log_setup()
 
 load_dotenv(override=True)  # take environment variables from .env.
@@ -124,26 +124,30 @@ def stage_generate(chat_completer: ChatCompleter, checkpoints_dir, chunks, num_q
         """
         Generates a dataset of instructions for a given chunk.
         """
-        questions = generate_question(chunk=chunk, *args, **kwargs)
-        chunk_question_pairs = [{"chunk": chunk, "chunk_id": chunk_id, "question": question} for question in questions]
-        questions_ds = Dataset.from_list(chunk_question_pairs)
+        # questions = generate_question(chunk=chunk, *args, **kwargs)
+        questions = generate_question_json(chunk=chunk, *args, **kwargs)
+        for question in questions:
+            question["chunk"]= chunk
+            question["chunk_id"]= chunk_id
+        # chunk_question_pairs = [{"chunk": chunk, "chunk_id": chunk_id, "question": question["question"],} for question in questions]
+        questions_ds = Dataset.from_list(questions)
         return questions_ds
 
     @checkpointed(answers_checkpointing)
     def generate_question_cot_answers(questions_ds, chunk_id: int, chunk: str, *args, **kwargs):
-        def process_example(chunk, question):
+        def process_example(chunk, question,):
             try:
-                cot_answer = generate_question_cot_answer(chunk=chunk, chunk_id=chunk_id, chunks=chunks, question=question, *args, **kwargs)
+                answers = generate_ques_answer(chunk=chunk, chunk_id=chunk_id, chunks=chunks, question=question, *args, **kwargs)
             except BadRequestError as e:
                 if e.code == "content_filter":
                     logger.warning(f"Got content filter error, skipping question '{question}': {e.message}")
                     return None
                 raise e
 
-            return cot_answer
+            return answers
 
         results = [process_example(chunk, question) for chunk, question in zip(questions_ds['chunk'], questions_ds['question'])] if len(questions_ds) > 0 else []
-        results = [r for r in results if r is not None]
+        results = [r for r in results if r is not None] 
         table = pa.Table.from_pylist(results)
         ds = Dataset(table)
         return ds
