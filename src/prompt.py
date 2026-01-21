@@ -15,16 +15,24 @@ build_qa_messages = {
             Generate questions across these three types, ensuring a balanced mix:
             1.  **Factual (Exact):** Questions asking for definitions, specifications, or directly stated facts.
                 *   *Example (English):* "What is the wavelength range of the Model X laser?"
+                *   *Example :* "Who is the manufacturer of product[x]?"
+                *   *Example :* "What is the typical output power of product [y]?"
+                *   *Example :* "What is the model number of the product [z]?"
             2.  **Conceptual (Reasoning):** Questions asking about 'why', 'how', trade-offs, or suitability for a use case.
                 *   *Example (English):* "Why would I choose Product A over Product B for high-precision measurement?"
+                *   *Example:* "which product is best for my [application]?"
+                *   *Example:* "How does the [feature] of product [x] enhance its performance in [application]?"
+                *   *Example:* "What are the advantages of using [product] in [specific scenario]?"
             3.  **Procedural (Action-Oriented):** Questions about configuration, troubleshooting, setup, or step-by-step processes.
                 *   *Example (English):* "How do I calibrate the device for outdoor use?"
+
 
             **DIFFICULTY LEVELS (MANDATORY DISTRIBUTION):**
             For each question type above, you must generate questions at three difficulty levels:
             - **Grounded (Simple):** Well-formed, accurate, and directly answerable from a single sentence or fact.
             - **Medium (Moderate):** Mostly correct but may use vague phrasing, combine 2-3 facts, or reflect a partial understanding.
             - **Hard (Complex):** Reflect user confusion, contain a realistic typo or synonym, or require synthesizing multiple pieces of information and understanding context.
+            - keep less ratio of Procedural about configuration, troubleshooting, setup, or step-by-step processes
 
             **REALISM RULES (ENFORCED):**
             To ensure questions mirror real user behavior, you MUST adhere to the following constraints:
