@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 import json
-# from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 import time
@@ -11,7 +11,7 @@ from multiprocessing import Pool
 import re
 load_dotenv()
 
-INPUT_DIR = Path("raw_md")
+INPUT_DIR = Path("output_directory")
 OUTPUT_DIR = Path("processed_md")
 
 MODEL = "gemini-2.5-flash"
@@ -151,7 +151,7 @@ def split_markdown(raw_md: str, max_length: int = 2000) -> list[str]:
         merged.append(temp.strip())
     
     return merged
-def process_with_langchain(llm: ChatGroq, raw_md: str) -> str:
+def process_with_langchain(llm, raw_md: str) -> str:
 
     chain = PROMPT | llm
     msg = chain.invoke({"raw_md": raw_md})
@@ -186,33 +186,33 @@ def process_raw(args):
             #     timeout=50,
             # )
             llm = ChatGroq(
-                model_name="llama-3.3-70b-versatile",
+                model_name="moonshotai/kimi-k2-instruct",#"openai/gpt-oss-120b",
                 temperature=0.1,
                 timeout=50
-)
+                )
 
             length = len(raw_md)
-            if length > 6000:
+            if length > 4000:
 
-                print(f"Warning: Input markdown length {length} exceeds typical limits.")
-                print(f"skipping file for now{file_path.name}")
+                print(f"Warning: Input markdown length {length} exceeds typical limits.skipping file for now{file_path.name}")
+                
                 # chunks = split_markdown(raw_md, max_length=2000)
                 # cleaned = ""
                 # for i, chunk in enumerate(chunks):
                 #     print(f"Processing chunk {i+1} with length {len(chunk)}")
                 #     cleaned += process_with_langchain(llm, chunk)
             else:
-                print(f"Input markdown length: {length}") 
+                print(f"{file_path.name} file input markdown length: {length}") 
                 cleaned = process_with_langchain(llm, raw_md)
             write_output(OUTPUT_DIR, INPUT_DIR, file_path, cleaned)
             print(f"OK -> {file_path.name}")
             save_processed_file(file_path_str)
-            time.sleep(10)
+            time.sleep(20)
         except Timeout:
             print("Request timed out!")
     except Exception as e:
         print(f"FAIL -> {file_path.name}: {e}")
-        time.sleep(10)
+        time.sleep(20)
 
 
 import random
