@@ -70,7 +70,7 @@ def get_doc_chunks(
                 page = reader.pages[page_num]
                 text += page.extract_text()
     elif doctype == "txt":
-        with open(file_path, 'r') as file:
+        with open(file_path, 'r',encoding="utf-8") as file:
             data = file.read()
         text = str(data)
     else:
@@ -81,6 +81,7 @@ def get_doc_chunks(
 
     text_splitter = SemanticChunker(embeddings, number_of_chunks=num_chunks)
     chunks = text_splitter.create_documents([text])
+    
     chunks = [chunk.page_content for chunk in chunks]
     return chunks
 

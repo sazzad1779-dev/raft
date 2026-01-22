@@ -67,7 +67,7 @@ def generate_question_json(chat_completer: ChatCompleter, chunk: Any, x: int = 5
     questions = data["questions"]
     return questions
 
-def encode_question_gen(question: str, chunk: Any, prompt_key : str = "gpt",cot:bool=True) -> list[str]:
+def encode_question_gen(example, prompt_key : str = "gpt",cot:bool=True) -> list[str]:
     """
     Encode multiple prompt instructions into a single string for the general case (`pdf`, `json`, or `txt`).
     """
@@ -75,20 +75,21 @@ def encode_question_gen(question: str, chunk: Any, prompt_key : str = "gpt",cot:
     prompts = []
 
     if cot:
-        prompt = cot_ans_prompt_templates[prompt_key].format(question=question, context=str(chunk))
+        prompt = cot_ans_prompt_templates[prompt_key].format(question=example["question"], context=str(example["chunk"]),grounding_evidence=example["grounding_evidence"],type=example["type"],difficulty=example["difficulty"])
     else:
-        prompt = generic_ans_prompt_templates[prompt_key].format(question=question, context=str(chunk))
+        prompt = generic_ans_prompt_templates[prompt_key].format(question=example["question"], context=str(example["chunk"]),grounding_evidence=example["grounding_evidence"],type=example["type"],difficulty=example["difficulty"])
 
     prompts.append({"role": "system", "content": "You are a helpful question answerer who can provide an answer given a question and relevant context."})
     prompts.append({"role": "user", "content": prompt})
 
     return prompts
 
-def generate_cot_answer(chat_completer: ChatCompleter, question: str, context: Any, doctype: DocType = "pdf", model: str = None, prompt_key : str = "gpt") -> str | None:
+def generate_cot_answer(chat_completer: ChatCompleter, example, doctype: DocType = "pdf", model: str = None, prompt_key : str = "gpt") -> str | None:
     """
     Generates the label / answer to `question` using `context` and GPT-4.
     """
-    question = encode_question_gen(question, context, prompt_key)
+
+    question = encode_question_gen(example, prompt_key)
     response = chat_completer(
         model=model,
         messages=question,
@@ -103,7 +104,7 @@ def generate_generic_answer(chat_completer: ChatCompleter, question: str, contex
     """
     Generates the label / answer to `question` using `context` and GPT-4.
     """
-    question = encode_question_gen(question, context, prompt_key,cot=False)
+    question = encode_question_gen(question, prompt_key,cot=False)
     response = chat_completer(
         model=model,
         messages=question,
@@ -118,7 +119,9 @@ def generate_generic_answer(chat_completer: ChatCompleter, question: str, contex
 
 def generate_ques_answer(
     example: dict,
+    chunk, chunk_id,
     chunks: list[str],
+    question,
     chat_completer: ChatCompleter,
     doctype: DocType = "api",
     num_distract: int = 3,
@@ -169,8 +172,8 @@ def generate_ques_answer(
     datapt["oracle_context"] = chunk
 
     # add answer to q
-    datapt["cot_answer"] = generate_cot_answer(chat_completer, question, chunk, doctype, model=model, prompt_key=prompt_key)
-    datapt["generic_answer"] = generate_generic_answer(chat_completer, question, chunk, doctype, model=model, prompt_key=prompt_key)
+    datapt["cot_answer"] = generate_cot_answer(chat_completer, example, doctype, model=model, prompt_key=prompt_key)
+    datapt["generic_answer"] = generate_generic_answer(chat_completer, example, doctype, model=model, prompt_key=prompt_key)
 
     # construct model instruction 
     context = ""

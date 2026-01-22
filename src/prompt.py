@@ -5,8 +5,8 @@ build_qa_messages = {
             "content": f"""You are an expert question designer creating training data for RAFT (Retrieval-Augmented Fine-Tuning). Your task is to generate {x} high-quality, realistic user questions based EXCLUSIVELY on the provided product documentation chunk.
 
             **INPUT:**
-            - **Chunk:** A segment of product documentation about SevenSix products.
-            - **Target Language:** JAPANESE. All questions must be in Japanese.
+            - **Chunk:** A segment of product documentation about sevensix products.
+            - **Target Language:** english. All questions must be in English.
 
             **CORE TASK:**
             Generate {x} questions that a real user might ask after reading this documentation. The questions must be answerable solely from this chunk, though some can imply a need for broader context.
@@ -118,8 +118,6 @@ cot_ans_prompt_templates = {
         [Relevant context sentences]
         ##end_quote##
         
-        ### Type-Specific Structure:
-        {type_specific_guidelines}
         
         ### Final Answer:
         <ANSWER>: [Complete, detailed answer in English]
@@ -140,6 +138,71 @@ cot_ans_prompt_templates = {
     """
 }
 
+
+generic_ans_prompt_templates = {
+    "gpt": """
+        ## TASK CONTEXT:
+        You are generating training data for RAFT (Retrieval-Augmented Fine-Tuning). Below is a question generated with specific parameters, along with the documentation context needed to answer it.
+
+        ## INPUT DATA:
+        Question: {question}
+        Question Type: {type}  # factual/conceptual/procedural
+        Difficulty Level: {difficulty}  # grounded/medium/hard
+        Grounding Evidence: {grounding_evidence}
+        Context: {context}
+
+        ## CORE INSTRUCTION:
+        Generate a DIRECT answer using EXCLUSIVELY the provided context. DO NOT show reasoning steps or explanations of your thinking process.
+
+        ## ANSWER REQUIREMENTS:
+        - Answer must be based SOLELY on the provided context
+        - Do NOT include any phrases like "based on the context", "according to the documentation", etc.
+        - Do NOT explain how you arrived at the answer
+        - Provide the answer as if it were the final output of a model
+        - Verify answerability using the provided Grounding Evidence
+
+        ## EVIDENCE HANDLING:
+        - Use information ONLY from the provided context
+        - For Hard questions: Account for potential terminology mismatches between question and context
+        - If Grounding Evidence is insufficient, search the full Context for complementary information
+
+        ## RESPONSE FORMAT:
+        
+        ### Quoted Evidence:
+        ##begin_quote##
+        [Relevant context sentences]
+        ##end_quote##
+        
+        ### Final Answer:
+        <ANSWER>: [Complete, direct answer in English]
+
+        ## TYPE-SPECIFIC ANSWER GUIDELINES:
+        
+        **For Factual Questions:**
+        - Present clear, concise information
+        - Include exact specifications/definitions
+        - Structure: Direct answer followed by supporting details
+        
+        **For Conceptual Questions (Why/How/Comparisons):**
+        - Explain the underlying principles or mechanisms
+        - Discuss implications or trade-offs if relevant
+        - Structure: Clear explanation without step-by-step breakdown
+        
+        **For Procedural Questions (Steps/Setup/Troubleshooting):**
+        - Provide actionable steps or guidance
+        - Note any prerequisites or conditions
+        - Structure: Sequential steps or clear instructions
+
+        ## CRITICAL RULES:
+        1. **Direct Answer Only:** Do NOT include reasoning, analysis, or thinking process
+        2. **Evidence-Based:** All information must come from quoted context
+        3. **No Hallucination:** Never add information beyond the provided context
+        4. **Terminology Consistency:** Use EXACT product/feature names from context
+        5. **URL Inclusion:** Include URLs ONLY if they appear in quoted context
+        6. **Language:** All answers in English (Japanese only if in quotes)
+        7. **Answer Verification:** Ensure final answer addresses the exact question
+    """
+}
 
 # cot_ans_prompt_templates = {
 #     "gpt": """
@@ -190,37 +253,37 @@ cot_ans_prompt_templates = {
 #     """
 #     }
 
-generic_ans_prompt_templates = {
-    "gpt": """
-        Question: {question}
-        Context: {context}
+# generic_ans_prompt_templates = {
+#     "gpt": """
+#         Question: {question}
+#         Context: {context}
 
-        Answer this question using the information given in the context above.
+#         Answer this question using the information given in the context above.
         
-        Instructions:
-        - All the response should be in English but maintain full descriptions.
-        - Provide step-by-step reasoning on how to answer the question.
-        - Explain which parts of the context are meaningful and why.
-        - Copy paste the relevant sentences from the context in ##begin_quote## and ##end_quote##.
-        - Provide a summary of how you reached your answer.
-        - End your response with the final answer in the form <ANSWER>: $answer.
-        - You MUST begin your final answer with the tag "<ANSWER>:".
+#         Instructions:
+#         - All the response should be in English but maintain full descriptions.
+#         - Provide step-by-step reasoning on how to answer the question.
+#         - Explain which parts of the context are meaningful and why.
+#         - Copy paste the relevant sentences from the context in ##begin_quote## and ##end_quote##.
+#         - Provide a summary of how you reached your answer.
+#         - End your response with the final answer in the form <ANSWER>: $answer.
+#         - You MUST begin your final answer with the tag "<ANSWER>:".
         
-        Output structure:
-        1. Brief factual explanation (1–2 short paragraphs)
-        2. Quoted specification evidence (if applicable)
-        3. Final in depth answer  
+#         Output structure:
+#         1. Brief factual explanation (1–2 short paragraphs)
+#         2. Quoted specification evidence (if applicable)
+#         3. Final in depth answer  
         
 
-        Final Answer format:
-        1. Brief factual explanation (1–2 short paragraphs)
-        2. Quoted specification evidence (if applicable)
-        3. Final in depth answer  
+#         Final Answer format:
+#         1. Brief factual explanation (1–2 short paragraphs)
+#         2. Quoted specification evidence (if applicable)
+#         3. Final in depth answer  
 
        
                       
-    """
-    }
+#     """
+#     }
 
 # build_cot_answers={
 #     "gpt": """## **Product Information Assistant** ##
