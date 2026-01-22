@@ -15,4 +15,6 @@ results
 results1
 results-checkpoints/
 results1-checkpoints/
-
+scraped_cleaned
+scraped_raw
+output_directory
