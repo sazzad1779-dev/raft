@@ -4,6 +4,8 @@ from dotenv import load_dotenv
 import json
 # from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
+
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 import time
@@ -162,7 +164,7 @@ def split_markdown(raw_md: str, max_length: int = 2000) -> list[str]:
         merged.append(temp.strip())
     
     return merged
-def process_with_langchain(llm: ChatGroq, raw_md: str) -> str:
+def process_with_langchain(llm, raw_md: str) -> str:
 
     chain = PROMPT | llm
     msg = chain.invoke({"raw_md": raw_md})
@@ -211,15 +213,15 @@ def process_raw(args):
             length = len(raw_md)
             if length > 8000:
 
-                print(f"Warning: Input markdown length {length} exceeds typical limits.")
-                print(f"skipping file for now{file_path.name}")
+                print(f"Warning: Input markdown length {length} exceeds typical limits.skipping file for now{file_path.name}")
+                
                 # chunks = split_markdown(raw_md, max_length=2000)
                 # cleaned = ""
                 # for i, chunk in enumerate(chunks):
                 #     print(f"Processing chunk {i+1} with length {len(chunk)}")
                 #     cleaned += process_with_langchain(llm, chunk)
             else:
-                print(f"Input markdown length: {length}") 
+                print(f"{file_path.name} file input markdown length: {length}") 
                 cleaned = process_with_langchain(llm, raw_md)
             write_output(OUTPUT_DIR, INPUT_DIR, file_path, cleaned)
             print(f"OK -> {file_path.name}")

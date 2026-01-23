@@ -6,7 +6,11 @@ build_qa_messages = {
 
             **INPUT:**
             - **Chunk:** A segment of product documentation about sevensix products.
+<<<<<<< HEAD
             - **Target Language:** All questions must be in English.
+=======
+            - **Target Language:** english. All questions must be in English.
+>>>>>>> 2ac619debfd180441a50eb501cd909d439ae8dc5
 
             **CORE TASK:**
             Generate {x} questions that a real user might ask after reading this documentation. The questions must be answerable solely from this chunk, though some can imply a need for broader context.

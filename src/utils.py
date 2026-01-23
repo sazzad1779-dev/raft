@@ -80,6 +80,7 @@ def get_doc_chunks(
 
     text_splitter = SemanticChunker(embeddings, number_of_chunks=num_chunks)
     chunks = text_splitter.create_documents([text])
+    
     chunks = [chunk.page_content for chunk in chunks]
     return chunks
 
