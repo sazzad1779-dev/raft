@@ -135,18 +135,21 @@ def stage_generate(chat_completer: ChatCompleter, checkpoints_dir, chunks, num_q
 
     @checkpointed(answers_checkpointing)
     def generate_question_cot_answers(questions_ds, chunk_id: int, chunk: str, *args, **kwargs):
-        def process_example(chunk, question,):
+        results=[]
+        for examples in questions_ds:
+
+        # def process_example(chunk, question,):
             try:
-                answers = generate_ques_answer(chunk=chunk, chunk_id=chunk_id, chunks=chunks, question=question, *args, **kwargs)
+                answers = generate_ques_answer(example=examples,chunk=examples["chunk"], chunk_id=examples["chunk_id"], chunks=chunks, question=examples["question"], *args, **kwargs)
             except BadRequestError as e:
                 if e.code == "content_filter":
-                    logger.warning(f"Got content filter error, skipping question '{question}': {e.message}")
+                    logger.warning(f"Got content filter error, skipping question '{examples["question"]}': {e.message}")
                     return None
                 raise e
 
-            return answers
+            results.append( answers)
 
-        results = [process_example(chunk, question) for chunk, question in zip(questions_ds['chunk'], questions_ds['question'])] if len(questions_ds) > 0 else []
+        # results = [process_example(chunk, question) for chunk, question in zip(questions_ds['chunk'], questions_ds['question'])] if len(questions_ds) > 0 else []
         results = [r for r in results if r is not None] 
         table = pa.Table.from_pylist(results)
         ds = Dataset(table)

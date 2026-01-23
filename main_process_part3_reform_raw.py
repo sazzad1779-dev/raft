@@ -3,6 +3,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 import json
 # from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 import time
@@ -11,34 +12,45 @@ from multiprocessing import Pool
 import re
 load_dotenv()
 
-INPUT_DIR = Path("raw_md")
+INPUT_DIR = Path("output_directory")
 OUTPUT_DIR = Path("processed_md")
 
-MODEL = "gemini-2.5-flash"
 
 SYSTEM_STYLE = """
 You are a technical content cleaner and organizer.
 
 Goal:
-- Convert raw markdown into a clean, well-structured markdown document.
+- Convert raw markdown into a clean, well-structured markdown document. Dont need to add --- at start/end.
 - Keep important info, remove irrelevant/duplicated fluff.
 - Improve readability and depth without inventing facts.
 - If tables exist or can be derived (specs, features, comparisons), produce a clean descriptive markdown sentence of the tables.
 - Use clear headings, bullets, and concise paragraphs.
-- Preserve code blocks and technical values exactly as-is.
 
-Rules:
-- Do NOT add fake specs or unknown values.
-- Do NOT remove technical details.
-- Do NOT invent new sections or content.
-- Do NOT change product names, model numbers, units, wavelengths, ranges, part numbers.
-- Keep content sequence as it is, reorganize only within existing content.
+## Strict Rules:
 
-Table Guidelines:
-1. Provide **descriptive sentences** for large tables to summarize the content clearly.
-2. Include **relevant headers** in the description to give context.
-3. For **large tables** (e.g., specifications, feature comparisons), give an **in-depth yet concise description**, covering all important details without skipping critical information.
-4. For **small tables** (e.g., 2-3 rows/columns), a brief summary is sufficient.
+**Content Order & Completeness:**
+- Always maintain the original document's content flow and paragraph sequence. Do not perform global reorganization.
+- Never omit factual information, procedural steps, application notes, features, specifications, overviews, or any other critical content.
+- Do not alter product names, model numbers, units, wavelengths, ranges, or part numbers.
+
+**No Addition or Fabrication:**
+- Do not add fake specifications, unknown values, new sections, or any invented content.
+- Do not provide guesses or "hallucinated" information.
+
+**Link Preservation:**
+- Always keep PDF URLs and other links intact and unchanged.
+- Always keep product Url(Source URL) at the bottom of product name.
+
+## Table Handling Guidelines:
+
+**Large/Complex Tables (e.g., detailed specification sheets, feature comparison matrices, data with many rows/columns):**
+- Provide detailed yet concise descriptive sentences, not just a simple summary.
+- Explicitly mention the key column headers and describe their contents in context.
+- Cover all important details (key specs, options, differences, ranges, etc.) without skipping critical information.
+- **Example:** "This specification table compares the key performance parameters (resolution, frame rate, sensitivity, power requirements) for Model A, B, and C. Model A offers the highest resolution (1920x1080), while Model C features the widest operating temperature range (-20°C to 60°C)."
+
+**Small Tables (e.g., 2-3 rows, 2-3 columns):**
+- A brief summary sentence is sufficient.
 
 Product overviews:
 - at the start of the document, include a brief product overview as utilizing product name,model,model number, category, and  manufacturer if available.
@@ -46,13 +58,12 @@ Product overviews:
 Output:
 - Return ONLY markdown. No extra commentary.
 - Respond in Japanese。
-- Never remove pdf urls or links, keep them as is.
+- Never fall into repetitive loops.
 
 Instructions:
-- Follow the requirements strictly.
+- Adhere strictly to these requirements.
 - Never hallucinate or fabricate information.
-- Never fall in loops.
-
+- Always prioritize the integrity and sequence of the original content.
 """
 PROMPT = ChatPromptTemplate.from_messages(
     [
@@ -180,19 +191,25 @@ def process_raw(args):
         print(f"Processing -> {file_path}")
         try:
             # llm = ChatGoogleGenerativeAI(
-            #     model=MODEL,
+            #     model="gemini-2.5-flash",
             #     temperature=0.0,
             #     api_key=api_key,
             #     timeout=50,
             # )
-            llm = ChatGroq(
-                model_name="llama-3.3-70b-versatile",
-                temperature=0.1,
-                timeout=50
-)
+            # llm = ChatGroq(
+            #     model_name="llama-3.3-70b-versatile",
+            #     temperature=0.1,
+            #     timeout=50
+            # )
+            llm = ChatOpenAI(
+                model_name="gpt-4o-mini",
+                temperature=0.0,
+                # openai_api_key=api_key,
+                timeout=100,
+            )
 
             length = len(raw_md)
-            if length > 6000:
+            if length > 8000:
 
                 print(f"Warning: Input markdown length {length} exceeds typical limits.")
                 print(f"skipping file for now{file_path.name}")
@@ -207,12 +224,12 @@ def process_raw(args):
             write_output(OUTPUT_DIR, INPUT_DIR, file_path, cleaned)
             print(f"OK -> {file_path.name}")
             save_processed_file(file_path_str)
-            time.sleep(10)
+            time.sleep(20)
         except Timeout:
             print("Request timed out!")
     except Exception as e:
         print(f"FAIL -> {file_path.name}: {e}")
-        time.sleep(10)
+        time.sleep(20)
 
 
 import random

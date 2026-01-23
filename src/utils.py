@@ -69,10 +69,9 @@ def get_doc_chunks(
             for page_num in range(num_pages):
                 page = reader.pages[page_num]
                 text += page.extract_text()
-    elif doctype == "txt":
-        with open(file_path, 'r') as file:
-            data = file.read()
-        text = str(data)
+    elif doctype in ("txt", "md"):
+        with open(file_path, "r", encoding="utf-8") as f:
+            text = f.read()
     else:
         raise TypeError("Document is not one of the accepted types: api, pdf, json, txt")
     
