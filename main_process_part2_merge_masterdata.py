@@ -103,13 +103,13 @@ def build_context_pandas(df, md_content):
 
 # ---------- Runner ----------
 # csv_path = "web_crawling/202601_製品マスタ - translated -  Product Master.csv"
-csv_path = "web_crawling/202601_製品マスタ - 製品マスタ.csv"
+csv_path = "web_crawling/202601_製品マスタ - 製品マスタ (1).csv"
 md_dir = "scraped_cleaned"
 
 def process_raw_md():
     df = pd.read_csv(csv_path)
     md_content = read_raw_md(md_dir)
     context_by_url = build_context_pandas(df, md_content)
-    save_contexts_by_url(context_by_url, "output_directory")
+    save_contexts_by_url(context_by_url, "output_directory2")
 
 process_raw_md()

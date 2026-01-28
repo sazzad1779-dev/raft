@@ -14,8 +14,8 @@ import time
 import json
 from urllib.parse import urljoin
 
-PROCESSED_FILE = "processed_products.json"
-VISITED_URLS_FILE = "visited_urls.json"
+# PROCESSED_FILE = "processed_products.json"
+VISITED_URLS_FILE = "scrapted_files.json"
 
 def load_json_set(file_path):
     """Load a set from a JSON file safely."""
@@ -38,7 +38,7 @@ def save_json_set(data_set, file_path):
     """Save a set to a JSON file."""
     with open(file_path, "w", encoding="utf-8") as f:
         json.dump(list(data_set), f, ensure_ascii=False, indent=2)
-        
+
 load_dotenv(override=True)
 firecrawl = Firecrawl()
 
@@ -68,11 +68,11 @@ def is_pdf_url(url: str) -> bool:
 def remove_all_urls(content, pdf_extract=False):
     """
     Remove all URLs and markdown links from content.
-    
+
     Args:
         content (str): The text content to clean.
         pdf_extract (bool): If True, keep PDF URLs in the content; else remove all URLs.
-    
+
     Returns:
         str: Cleaned content.
     """
@@ -96,7 +96,7 @@ def remove_all_urls(content, pdf_extract=False):
                 # pdf_extract=False → keep PDFs (even with ? or #)
                 return match.group(0) if is_pdf_url(url) else text
         content = re.sub(r'\[(.*?)\]\((.*?)\)', _md_link_replacer, content)
-        
+
     content = re.sub(
         r'光学部材調達をさまざまな角度から迅速にサポート致します\s*[\r\n]+[-•*]\s*日本語\s*[\r\n]+[-•*]\s*English',
         '',
@@ -293,24 +293,81 @@ def scrape_pdf(url, visited_urls):
 
 
 # CSV Processing
+# def process_csv(csv_file_path, pdf_extractor=False):
+#     """Process URLs from CSV file."""
+#     # visited_urls = set()
+#     visited_urls = load_json_set(VISITED_URLS_FILE)
+#     processed_products = load_json_set(PROCESSED_FILE)
+#     md_names = [os.path.splitext(f)[0] for f in os.listdir("scraped_cleaned") if f.lower().endswith(".md")]
+#     print(md_names)
+#     with open(csv_file_path, "r", encoding="utf-8") as csvfile:
+#         reader = csv.DictReader(csvfile)
+
+#         for row in reader:
+#             url = None
+
+#             for key in row:
+#                 if key.lower() == "url" and row[key].strip():
+#                     url = row[key].strip()
+#                     break
+
+#             if not url:
+#                 for key in row:
+#                     if row[key] and "http" in row[key].lower():
+#                         url = row[key].strip()
+#                         break
+
+#             if not url:
+#                 continue
+
+#             if not url.startswith(("http://", "https://")):
+#                 url = "https://" + url
+#             filename = re.sub(
+#             r'[^a-zA-Z0-9_]', '_',
+#             url.replace('https://', '').replace('http://', '')
+#         )[:50]
+#             product_name = row[' Model']
+#             if filename in md_names:
+#                 processed_products.add(product_name)
+#                 visited_urls.add(url)
+#                 print(f"Skipping already processed product by filename: {filename}")
+#                 continue
+#             extracted_links = scrape_url(url, visited_urls,pdf_extractor=pdf_extractor)
+
+#             if pdf_extractor and extracted_links:
+#                 for _, link_url in extracted_links:
+#                     if link_url.startswith("/"):
+#                         link_url = urljoin(url, link_url)
+#                     scrape_pdf(link_url, visited_urls)
+#             # Mark product as processed
+#             save_json_set(processed_products, PROCESSED_FILE)
+#             print(f"Processed product: {product_name}")
+#             time.sleep(1)
+
+#     print("\nSummary:")
+#     print(f"Total unique URLs scraped: {len(visited_urls)}")
+#     print("Content saved with all URLs removed")
+
 def process_csv(csv_file_path, pdf_extractor=False):
     """Process URLs from CSV file."""
-    visited_urls = set()
-    visited_urls = load_json_set(VISITED_URLS_FILE)
-    processed_products = load_json_set(PROCESSED_FILE)
-    md_names = [os.path.splitext(f)[0] for f in os.listdir("scraped_cleaned") if f.lower().endswith(".md")]
-    print(md_names)
+    visited_filenames = load_json_set(VISITED_URLS_FILE)
+    # processed_products = load_json_set(PROCESSED_FILE)
+
+    OUTPUT_DIR = "scraped_cleaned"
+
     with open(csv_file_path, "r", encoding="utf-8") as csvfile:
         reader = csv.DictReader(csvfile)
 
         for row in reader:
             url = None
 
+            # 1. Find URL column
             for key in row:
                 if key.lower() == "url" and row[key].strip():
                     url = row[key].strip()
                     break
 
+            # 2. Fallback: any http value
             if not url:
                 for key in row:
                     if row[key] and "http" in row[key].lower():
@@ -322,39 +379,64 @@ def process_csv(csv_file_path, pdf_extractor=False):
 
             if not url.startswith(("http://", "https://")):
                 url = "https://" + url
+
+            # 🔹 Generate filename (single source of truth)
             filename = re.sub(
-            r'[^a-zA-Z0-9_]', '_',
-            url.replace('https://', '').replace('http://', '')
-        )[:50]
-            product_name = row[' Model']
-            if filename in md_names:
-                processed_products.add(product_name)
-                visited_urls.add(url)
-                print(f"Skipping already processed product by filename: {filename}")
+                r"[^a-zA-Z0-9_]",
+                "_",
+                url.replace("https://", "").replace("http://", "")
+            )[:50]
+
+            md_path = os.path.join(OUTPUT_DIR, f"{filename}.md")
+            product_name = row.get(" Model", "").strip()
+
+            # 🔹 Skip if filename already visited
+            if filename in visited_filenames:
+                print(f"Skipping already visited filename: {filename}")
                 continue
-            extracted_links = scrape_url(url, visited_urls,pdf_extractor=pdf_extractor)
+
+            # 🔹 Skip if file already exists
+            if os.path.exists(md_path):
+                print(f"Skipping existing file: {md_path}")
+                visited_filenames.add(f"{filename}.md")
+                # processed_products.add(product_name)
+                save_json_set(visited_filenames, VISITED_URLS_FILE)
+                continue
+
+            # Scrape
+            extracted_links = scrape_url(
+                url,
+                visited_filenames,   # now tracking filenames
+                pdf_extractor=pdf_extractor
+            )
 
             if pdf_extractor and extracted_links:
                 for _, link_url in extracted_links:
                     if link_url.startswith("/"):
                         link_url = urljoin(url, link_url)
-                    scrape_pdf(link_url, visited_urls)
-            # Mark product as processed
-            save_json_set(processed_products, PROCESSED_FILE)
+                    scrape_pdf(link_url, visited_filenames)
+
+            # Mark processed
+            visited_filenames.add(f"{filename}.md")
+            # processed_products.add(product_name)
+
+            save_json_set(visited_filenames, VISITED_URLS_FILE)
+            # save_json_set(processed_products, PROCESSED_FILE)
+
             print(f"Processed product: {product_name}")
             time.sleep(1)
-    
+
     print("\nSummary:")
-    print(f"Total unique URLs scraped: {len(visited_urls)}")
-    print("Content saved with all URLs removed")
+    print(f"Total unique files processed: {len(visited_filenames)}")
+
 
 
 # Entry Point
 def main():
     csv_file_path = (
-        "web_crawling/202601_製品マスタ - translated -  Product Master.csv"
+        "web_crawling/202601_製品マスタ - 製品マスタ (1).csv"
     )
-    pdf_extractor = False  
+    pdf_extractor = False
     if not os.path.exists(csv_file_path):
         print(f"CSV file not found: {csv_file_path}")
         return

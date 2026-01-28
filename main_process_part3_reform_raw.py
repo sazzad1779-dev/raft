@@ -7,92 +7,18 @@ from langchain_openai import ChatOpenAI
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
-from langchain_core.prompts import ChatPromptTemplate
+
 import time
 from requests.exceptions import Timeout
 from multiprocessing import Pool
 import re
+from main_process_prompt import PROMPT
 load_dotenv()
 
-INPUT_DIR = Path("output_directory")
+INPUT_DIR = Path("output_directory2")
 OUTPUT_DIR = Path("processed_md")
-
-
-SYSTEM_STYLE = """
-You are a technical content cleaner and organizer.
-
-Goal:
-- Convert raw markdown into a clean, well-structured markdown document. Dont need to add --- at start/end.
-- Keep important info, remove irrelevant/duplicated fluff.
-- Improve readability and depth without inventing facts.
-- If tables exist or can be derived (specs, features, comparisons), produce a clean descriptive markdown sentence of the tables.
-- Use clear headings, bullets, and concise paragraphs.
-
-## Strict Rules:
-
-**Content Order & Completeness:**
-- Always maintain the original document's content flow and paragraph sequence. Do not perform global reorganization.
-- Never omit factual information, procedural steps, application notes, features, specifications, overviews, or any other critical content.
-- Do not alter product names, model numbers, units, wavelengths, ranges, or part numbers.
-
-**No Addition or Fabrication:**
-- Do not add fake specifications, unknown values, new sections, or any invented content.
-- Do not provide guesses or "hallucinated" information.
-
-**Link Preservation:**
-- Always keep PDF URLs and other links intact and unchanged.
-- Always keep product Url(Source URL) at the bottom of product name.
-
-## Table Handling Guidelines:
-
-**Large/Complex Tables (e.g., detailed specification sheets, feature comparison matrices, data with many rows/columns):**
-- Provide detailed yet concise descriptive sentences, not just a simple summary.
-- Explicitly mention the key column headers and describe their contents in context.
-- Cover all important details (key specs, options, differences, ranges, etc.) without skipping critical information.
-- **Example:** "This specification table compares the key performance parameters (resolution, frame rate, sensitivity, power requirements) for Model A, B, and C. Model A offers the highest resolution (1920x1080), while Model C features the widest operating temperature range (-20°C to 60°C)."
-
-**Small Tables (e.g., 2-3 rows, 2-3 columns):**
-- A brief summary sentence is sufficient.
-
-Product overviews:
-- at the start of the document, include a brief product overview as utilizing product name,model,model number, category, and  manufacturer if available.
-
-Output:
-- Return ONLY markdown. No extra commentary.
-- Respond in Japanese。
-- Never fall into repetitive loops.
-
-Instructions:
-- Adhere strictly to these requirements.
-- Never hallucinate or fabricate information.
-- Always prioritize the integrity and sequence of the original content.
-"""
-PROMPT = ChatPromptTemplate.from_messages(
-    [
-        ("system", SYSTEM_STYLE),
-        (
-            "human",
-            """Process the following markdown.
-Requirements:
-1) Remove irrelevant navigation/footer/noise (cookie banners, repeated menus, unrelated links).
-2) Fix broken markdown.
-3) Make sections more in-depth by reorganizing what is already present (do not invent).
-4) If content includes specs/parameters scattered in text, convert to a descriptive markdown table.
-5) Keep product names, model numbers, units, wavelengths, ranges, part numbers unchanged.
-6) Don't add any irrelevant commentary or explanation. 
-
-RAW MARKDOWN:
----
-{raw_md}
----
-""",
-        ),
-    ]
-)
-
-
-
 TRACK_FILE = Path("processed_files.json")
+
 
 def load_processed_files() -> set:
     """Load already processed file paths from JSON."""
@@ -173,7 +99,7 @@ def process_with_langchain(llm, raw_md: str) -> str:
     return (msg.content or "").strip()
 
 def process_raw(args):
-    file_path, api_key = args
+    file_path= args
     file_path_str = str(file_path)
     
     # Skip if already processed
@@ -181,7 +107,6 @@ def process_raw(args):
     if file_path_str in processed_files:
         print(f"SKIPPED (already processed) -> {file_path.name}")
         return
-    print(f"using api key: {api_key} for file: {file_path.name}")
     raw_md = file_path.read_text(encoding="utf-8", errors="ignore").strip()
     if not raw_md:
         write_output(OUTPUT_DIR, INPUT_DIR, file_path, "")
@@ -192,17 +117,6 @@ def process_raw(args):
     try:
         print(f"Processing -> {file_path}")
         try:
-            # llm = ChatGoogleGenerativeAI(
-            #     model="gemini-2.5-flash",
-            #     temperature=0.0,
-            #     api_key=api_key,
-            #     timeout=50,
-            # )
-            # llm = ChatGroq(
-            #     model_name="llama-3.3-70b-versatile",
-            #     temperature=0.1,
-            #     timeout=50
-            # )
             llm = ChatOpenAI(
                 model_name="gpt-4o-mini",
                 temperature=0.0,
@@ -244,14 +158,8 @@ if __name__ == "__main__":
     if not md_files:
         print(f"No .md files found in: {INPUT_DIR}")
 
-    # Load API keys from environment
-    api_keys_str = os.getenv("GEMINI_API_KEYS", "")
-    api_keys = [k.strip() for k in api_keys_str.split(",") if k.strip()]
-    if not api_keys:
-        raise ValueError("No API keys found in GEMINI_API_KEYS")
-
     # Assign a random API key for each file
-    jobs = [(f, random.choice(api_keys)) for f in md_files]
+    jobs = [f for f in md_files]
 
     with Pool(4) as pool:
         results = pool.map(process_raw, jobs)

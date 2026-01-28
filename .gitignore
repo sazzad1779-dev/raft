@@ -18,5 +18,6 @@ results1-checkpoints/
 scraped_cleaned
 scraped_raw
 output_directory
+output_directory2
 md
 processed_md

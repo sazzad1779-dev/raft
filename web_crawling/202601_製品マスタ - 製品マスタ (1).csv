@@ -1,9 +1,9 @@
 大カテゴリ,中カテゴリ,小カテゴリ,メーカ,品名,モデル,型番,URL,最小波長,最大波長,平均出力,最大出力,時間幅,パルス幅,繰り返し周波数,繰り返し率,加工,通信,分光・計測,イメージング,デモ機貸出し
-ファイバーレーザー・その他光源,広帯域白色レーザー光源,,NKT Photonics A/S,広帯域 白色レーザー光源 最上位モデル『SuperK FIANIUM』,SuperK FIANIUM,FIU-6,https://www.sevensix.co.jp/products/superkseries_nktp/,400nm,2400nm,,2.2W,パルス,,78MHz,,,,,,
-ファイバーレーザー・その他光源,広帯域白色レーザー光源,,NKT Photonics A/S,広帯域 白色レーザー光源 最上位モデル『SuperK FIANIUM』,SuperK FIANIUM,FIU-15,https://www.sevensix.co.jp/products/superkseries_nktp/,400nm,2400nm,,5.5W,パルス,,78MHz,,,,,,
-ファイバーレーザー・その他光源,広帯域白色レーザー光源,,NKT Photonics A/S,広帯域 白色レーザー光源 最上位モデル『SuperK FIANIUM』,SuperK FIANIUM,FIR-20,https://www.sevensix.co.jp/products/superkseries_nktp/,400nm,2400nm,,6.5W,パルス,,78MHz,,,,,,
-,,,NKT Photonics A/S,OCT用 広帯域 白色レーザー光源 最上位モデル『SuerK FIANIUM OCT』,SuperK FIANIUM OCT,FIU-6 OCT,https://www.sevensix.co.jp/products/superkseries_nktp/,400nm,2400nm,600mW,6.5W,パルス,,312 ± 3MHz,,,,,,
-ファイバーレーザー・その他光源,広帯域白色レーザー光源,,NKT Photonics A/S,OCT用 広帯域 白色レーザー光源 最上位モデル『SuerK FIANIUM OCT』,SuperK FIANIUM OCT,FIR-9 OCT,https://www.sevensix.co.jp/products/superkfianium_nktp/,400nm,2400nm,900mW,6.5W,パルス,,312 ± 3MHz,,,,,,あり
+ファイバーレーザー・その他光源,広帯域白色レーザー光源,,NKT Photonics A/S,広帯域 白色レーザー光源 最上位モデル『SuperK FIANIUM』,SuperK FIANIUM,FIU-6,https://www.sevensix.co.jp/products/superkfianium_nktp/,400nm,2400nm,,2.2W,パルス,,78MHz,,,,,,
+ファイバーレーザー・その他光源,広帯域白色レーザー光源,,NKT Photonics A/S,広帯域 白色レーザー光源 最上位モデル『SuperK FIANIUM』,SuperK FIANIUM,FIU-15,https://www.sevensix.co.jp/products/superkfianium_nktp/,400nm,2400nm,,5.5W,パルス,,78MHz,,,,,,
+ファイバーレーザー・その他光源,広帯域白色レーザー光源,,NKT Photonics A/S,広帯域 白色レーザー光源 最上位モデル『SuperK FIANIUM』,SuperK FIANIUM,FIR-20,https://www.sevensix.co.jp/products/superkfianium_nktp/,400nm,2400nm,,6.5W,パルス,,78MHz,,,,,,
+ファイバーレーザー・その他光源,広帯域白色レーザー光源,,NKT Photonics A/S,OCT用 広帯域 白色レーザー光源 最上位モデル『SuerK FIANIUM OCT』,SuperK FIANIUM OCT,FIU-6 OCT,https://www.sevensix.co.jp/products/octsc_nktp/,400nm,2400nm,600mW,6.5W,パルス,,312 ± 3MHz,,,,,,
+ファイバーレーザー・その他光源,広帯域白色レーザー光源,,NKT Photonics A/S,OCT用 広帯域 白色レーザー光源 最上位モデル『SuerK FIANIUM OCT』,SuperK FIANIUM OCT,FIR-9 OCT,https://www.sevensix.co.jp/products/octsc_nktp/,400nm,2400nm,900mW,6.5W,パルス,,312 ± 3MHz,,,,,,あり
 ファイバーレーザー・その他光源,広帯域白色レーザー光源,,NKT Photonics A/S,産業用 広帯域 白色レーザー光源『SuperK EVO』,SuperK EVO,ERL-04,https://www.sevensix.co.jp/products/superk-evo/,510nm,2000nm,,1W,パルス,,20MHz,,,,,,
 ファイバーレーザー・その他光源,広帯域白色レーザー光源,,NKT Photonics A/S,産業用 広帯域 白色レーザー光源『SuperK EVO』,SuperK EVO,EUL-10,https://www.sevensix.co.jp/products/superk-evo/,425nm,2400nm,,0.3W,パルス,,30MHz,,,,,,
 ファイバーレーザー・その他光源,広帯域白色レーザー光源,,NKT Photonics A/S,産業用 広帯域 白色レーザー光源『SuperK EVO』,SuperK EVO HP,EU-4,https://www.sevensix.co.jp/products/superk-evo/,415nm,2250nm,,2W,パルス,,20MHz,,,,,,
