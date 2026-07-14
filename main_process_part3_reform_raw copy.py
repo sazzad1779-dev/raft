@@ -1,19 +1,23 @@
-import time
-import re
-import json
+import os
 from pathlib import Path
 from dotenv import load_dotenv
+import json
+# from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
+
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_groq import ChatGroq
+
+import time
 from requests.exceptions import Timeout
 from multiprocessing import Pool
-from main_process_part3_prompt import PROMPT
+import re
+from main_process_prompt import PROMPT
 load_dotenv()
 
 INPUT_DIR = Path("output_directory2")
-OUTPUT_DIR = Path("organized_content_dir")
-TRACK_FILE = Path("organized_content_tracker.json")
+OUTPUT_DIR = Path("processed_md")
+TRACK_FILE = Path("processed_files.json")
 
 
 def load_processed_files() -> set:
@@ -143,6 +147,9 @@ def process_raw(args):
         print(f"FAIL -> {file_path.name}: {e}")
         time.sleep(20)
 
+
+import random
+from multiprocessing import Pool
 
 if __name__ == "__main__":
     ensure_dir(OUTPUT_DIR)
